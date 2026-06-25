@@ -286,7 +286,9 @@ function buildConfig(){
 async function run(){
   $('run').disabled=true; $('status').textContent='Running…'; $('status').className='hint';
   try {
-    const res = await fetch('/api/simulate', {method:'POST', headers:{'Content-Type':'application/json'},
+    // relative path so the app works both at the root (localhost:8000/web/)
+    // and behind a reverse-proxy subpath (e.g. helmlog's nginx at /sim/web/).
+    const res = await fetch('../api/simulate', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify(buildConfig())});
     const d = await res.json();
     if (!res.ok || d.error) throw new Error(d.error || ('HTTP '+res.status));

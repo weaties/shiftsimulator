@@ -20,14 +20,32 @@ a hosted tool, not something you have to install.
 ## Solution
 
 Run shiftsim as a long-lived **systemd service** on the Raspberry Pi
-`corvopi-live`, bound to localhost, behind an **nginx reverse proxy** on port 80
-— exactly the pattern helmlog uses. Reachable on the boat LAN by hostname, and
-over the crew Tailnet via Tailscale, with optional public HTTPS later. Code is
-updated with a `deploy.sh` that pulls `main` and restarts the service, and the
-whole box is reproducible from an idempotent `setup.sh`.
+`corvopi-live`, bound to localhost (`127.0.0.1:8765`). Code is updated with a
+`deploy.sh` that pulls `main` and restarts the service, and the box is
+reproducible from an idempotent `setup.sh`. Reachable on the boat LAN by
+hostname and over the crew Tailnet via Tailscale, with optional public HTTPS
+later.
 
-Why this host: `corvopi-live` is a dedicated Pi, so shiftsim owns nginx's root
-path there (no path-prefix juggling with helmlog's services on `corvopi`).
+### Coexistence with helmlog (important)
+
+`corvopi-live` **already runs helmlog behind nginx** on port 80, using helmlog's
+single-port path-routing scheme (`/`, `/grafana/`, `/signalk/`, `/sk/`). shiftsim
+must coexist, not compete. So:
+
+- shiftsim ships **service-only** — `setup.sh` installs the systemd service and
+  does **not** install or own nginx (that's a `--standalone-nginx` opt-in for a
+  truly dedicated host).
+- The reverse-proxy entry lives in **helmlog's** nginx config as one more path,
+  `/sim/`, matching how `/grafana/` and `/signalk/` are done. This is a
+  coordinated change in the helmlog repo (`scripts/nginx/helmlog.conf`), so it
+  survives helmlog's `setup.sh` re-runs.
+- The proxy **strips the `/sim/` prefix** (`proxy_pass http://shiftsim/;`), so the
+  app serves at its own root internally and needs no base-path config. shiftsim
+  is made **subpath-safe**: the bare root 302-redirects to `web/` (relative) and
+  the viewer calls the API with a **relative** path (`../api/simulate`), so it
+  works identically at `localhost:8000/web/` and at `corvopi-live/sim/web/`.
+
+Crew URL: **`http://corvopi-live/sim/`**.
 
 ---
 
@@ -182,10 +200,28 @@ Tunnel with HTTPS, same as helmlog — never a raw port-forward.
   config is rejected with 400, not a hang.
 - `deploy.sh` on a clean `main` pulls and restarts with no prompt.
 
-## Open questions
+### helmlog nginx addition (coordinated change)
 
-- Port: `8765` proposed — confirm it's free on `corvopi-live`.
-- Does `corvopi-live` already run nginx for something else? If so, shiftsim
-  becomes a `server_name` / path rather than `default_server`.
-- Auto-deploy on merge to `main` (a webhook/pull timer), or stay manual via
-  `deploy.sh` like helmlog? Recommend manual for Phase 1.
+Added to helmlog's `scripts/nginx/helmlog.conf`, alongside its other upstreams:
+
+```nginx
+upstream shiftsim { server 127.0.0.1:8765; }
+
+# shiftsim sailing-tactics simulator — /sim/ (prefix stripped)
+location = /sim  { return 301 /sim/; }
+location /sim/ {
+    proxy_pass http://shiftsim/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+## Open questions (resolved)
+
+- **Port `8765`** — confirmed free on `corvopi-live`.
+- **nginx ownership** — resolved: helmlog owns nginx; shiftsim is service-only
+  and is proxied at `/sim/` (see Coexistence above).
+- **Auto-deploy on merge** vs manual `deploy.sh` — staying manual for Phase 1,
+  matching helmlog.

@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # setup.sh — provision shiftsim on a Raspberry Pi (or any Debian host).
 #
-# Installs nginx, a dedicated service account, and a systemd service that runs
-# `python -m shiftsim serve` on localhost, fronted by nginx on port 80.
-# Mirrors helmlog's deploy technique (loopback service + nginx reverse proxy).
+# Installs a dedicated service account and a hardened systemd service that runs
+# `python -m shiftsim serve` on localhost (127.0.0.1:8765).
+#
+# nginx is NOT installed by default, because the target host (corvopi-live)
+# already runs helmlog's nginx. Coexistence is by path: helmlog's nginx proxies
+# /sim/ -> 127.0.0.1:8765 (see docs/specs/deploy-corvopi-live.md and the
+# matching change in the helmlog repo). The app is subpath-safe.
 #
 # Usage (run from the cloned repo, as a normal user with sudo):
-#   bash scripts/setup.sh
+#   bash scripts/setup.sh                  # service only (coexist behind helmlog nginx)
+#   bash scripts/setup.sh --standalone-nginx   # also install our own nginx :80 (dedicated host)
 #
-# Idempotent — safe to re-run after a `git pull`. Prompts once for your sudo
-# password (cached for the run).
+# Idempotent — safe to re-run after a `git pull`. Prompts once for sudo.
 
 set -euo pipefail
 
@@ -18,19 +22,28 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PORT="${SHIFTSIM_PORT:-8765}"
 SERVICE_USER="shiftsim"
 PYTHON="$(command -v python3)"
+WITH_NGINX=0
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --standalone-nginx) WITH_NGINX=1; shift ;;
+        -h|--help) echo "Usage: setup.sh [--standalone-nginx]"; exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; exit 1 ;;
+    esac
+done
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 step() { echo -e "\n${GREEN}==> $*${NC}"; }
 warn() { echo -e "${YELLOW}WARN:${NC} $*"; }
 
-step "shiftsim setup — repo at $PROJECT_DIR, port $PORT, python $PYTHON"
+step "shiftsim setup — repo $PROJECT_DIR, port $PORT, python $PYTHON, nginx=$([ $WITH_NGINX = 1 ] && echo standalone || echo 'helmlog (coexist)')"
 
 # ---------------------------------------------------------------------------
-# 1) Packages
+# 1) Packages (no nginx unless standalone)
 # ---------------------------------------------------------------------------
-step "Installing nginx (and ensuring python3/git)..."
+step "Ensuring python3 + git..."
 sudo apt-get update -qq
-sudo apt-get install -y nginx git python3
+sudo apt-get install -y python3 git
 
 # ---------------------------------------------------------------------------
 # 2) Service account
@@ -41,8 +54,7 @@ else
     step "Creating system user '$SERVICE_USER'..."
     sudo useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
 fi
-# the service account only needs to read the code (repo lives world-readable
-# under /opt); make sure the tree is traversable + readable.
+# the service account only needs to read the code; keep the tree traversable.
 sudo chmod -R a+rX "$PROJECT_DIR"
 
 # ---------------------------------------------------------------------------
@@ -78,14 +90,22 @@ sudo systemctl enable --now shiftsim
 sudo systemctl restart shiftsim
 
 # ---------------------------------------------------------------------------
-# 4) nginx reverse proxy
+# 4) nginx — only on a dedicated host (--standalone-nginx)
 # ---------------------------------------------------------------------------
-step "Configuring nginx reverse proxy..."
-sudo install -m 644 "$SCRIPT_DIR/nginx/shiftsim.conf" /etc/nginx/sites-available/shiftsim.conf
-sudo ln -sf /etc/nginx/sites-available/shiftsim.conf /etc/nginx/sites-enabled/shiftsim.conf
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl reload nginx
+if [[ $WITH_NGINX -eq 1 ]]; then
+    step "Installing standalone nginx reverse proxy (:80)..."
+    sudo apt-get install -y nginx
+    sudo install -m 644 "$SCRIPT_DIR/nginx/shiftsim.conf" /etc/nginx/sites-available/shiftsim.conf
+    sudo ln -sf /etc/nginx/sites-available/shiftsim.conf /etc/nginx/sites-enabled/shiftsim.conf
+    sudo rm -f /etc/nginx/sites-enabled/default
+    sudo nginx -t
+    sudo systemctl reload nginx
+else
+    step "Skipping nginx (coexist mode)."
+    echo "    The app is on 127.0.0.1:$PORT. Front it from helmlog's nginx:"
+    echo "    add the /sim/ location from docs/specs/deploy-corvopi-live.md to"
+    echo "    helmlog's scripts/nginx/helmlog.conf, then reload nginx there."
+fi
 
 # ---------------------------------------------------------------------------
 # 5) Health check
@@ -93,16 +113,15 @@ sudo systemctl reload nginx
 step "Health check..."
 sleep 1
 if curl -fsS "http://127.0.0.1:$PORT/web/" >/dev/null; then
-    echo "    app responding on 127.0.0.1:$PORT"
+    echo "    OK — shiftsim responding on 127.0.0.1:$PORT"
 else
-    warn "app did not respond on port $PORT — check: sudo journalctl -u shiftsim -n 50"
-fi
-if curl -fsS -o /dev/null "http://127.0.0.1/web/"; then
-    echo "    nginx proxying on port 80"
-else
-    warn "nginx did not proxy — check: sudo nginx -t && sudo journalctl -u nginx -n 50"
+    warn "app did not respond — check: sudo journalctl -u shiftsim -n 50"
 fi
 
 HOST="$(hostname)"
-step "Done. Open:  http://$HOST/   (redirects to /web/)"
+if [[ $WITH_NGINX -eq 1 ]]; then
+    step "Done. Open:  http://$HOST/"
+else
+    step "Done (service-only). Once helmlog's nginx has the /sim/ location:  http://$HOST/sim/"
+fi
 echo "    Update later with:  bash $SCRIPT_DIR/deploy.sh"

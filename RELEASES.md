@@ -16,6 +16,11 @@ Phase 1 of getting the simulator in front of the crew.
 - Compute caps on the public `POST /api/simulate` (`shiftsim.serve.validate_request`):
   bounds on boats, dt, max_time, laps, and a step-boat budget, so an adversarial
   config can't wedge the Pi. Over-limit requests return `413` with a clear reason.
+- **Coexists with helmlog on `corvopi-live`:** ships service-only (no competing
+  nginx); proxied at `/sim/` by helmlog's nginx. App is subpath-safe — bare root
+  redirects to `web/` (relative) and the viewer calls the API relatively
+  (`../api/simulate`), so it works at both `localhost:8000/web/` and
+  `corvopi-live/sim/web/`. `setup.sh --standalone-nginx` remains for a dedicated host.
 
 ## 0.1.0 — Initial release
 

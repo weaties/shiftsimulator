@@ -80,6 +80,17 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def do_GET(self) -> None:  # noqa: N802
+        # Send the bare root to the viewer. A *relative* redirect so it works
+        # both at the host root (-> /web/) and behind a proxy subpath that
+        # strips its prefix (e.g. /sim/ -> app / -> browser /sim/web/).
+        if urlparse(self.path).path in ("", "/"):
+            self.send_response(302)
+            self.send_header("Location", "web/")
+            self.end_headers()
+            return
+        super().do_GET()
+
     def do_POST(self) -> None:  # noqa: N802
         if urlparse(self.path).path != "/api/simulate":
             self.send_error(404)
