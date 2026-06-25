@@ -1,0 +1,26 @@
+# shiftsim systemd service — reference copy.
+# setup.sh renders the live unit from the actual clone path; this is the
+# canonical version for the documented /opt/shiftsim layout.
+[Unit]
+Description=shiftsim sailing-tactics simulator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shiftsim
+WorkingDirectory=/opt/shiftsim
+Environment=PYTHONPATH=/opt/shiftsim/src
+ExecStart=/usr/bin/python3 -m shiftsim serve --port 8765 --dir /opt/shiftsim
+Restart=always
+RestartSec=2
+
+# hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadOnlyPaths=/opt/shiftsim
+
+[Install]
+WantedBy=multi-user.target

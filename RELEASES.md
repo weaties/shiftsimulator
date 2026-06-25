@@ -3,6 +3,20 @@
 Release notes for shiftsim. The `promote.yml` workflow (added with the
 deployment feature) gates `main → stage → live` on a new `##` heading here.
 
+## 0.2.0 — Deploy to corvopi-live (#1)
+
+Phase 1 of getting the simulator in front of the crew.
+
+- `scripts/setup.sh` — idempotent provisioning: nginx, a `shiftsim` service
+  account, and a hardened systemd service running `python -m shiftsim serve` on
+  localhost, fronted by nginx on port 80 (mirrors helmlog's deploy technique).
+- `scripts/deploy.sh` — pull `main` (or `--pr N`) and restart the service.
+- `scripts/systemd/shiftsim.service`, `scripts/nginx/shiftsim.conf` — reference
+  artifacts; the bare host redirects to `/web/`.
+- Compute caps on the public `POST /api/simulate` (`shiftsim.serve.validate_request`):
+  bounds on boats, dt, max_time, laps, and a step-boat budget, so an adversarial
+  config can't wedge the Pi. Over-limit requests return `413` with a clear reason.
+
 ## 0.1.0 — Initial release
 
 The first working version of the sailing-tactics simulator.
