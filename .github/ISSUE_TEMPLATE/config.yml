@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How the simulator works
+    url: https://github.com/weaties/shiftsimulator/blob/main/web/docs.html
+    about: The model documentation — read it before proposing changes to the wind, boat, or strategy models.
+  - name: Contributing guide
+    url: https://github.com/weaties/shiftsimulator/blob/main/CONTRIBUTING.md
+    about: The issue → spec → PR workflow and required checks.

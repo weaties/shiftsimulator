@@ -1,0 +1,37 @@
+{
+  "name": "Persistent right shift: pick the favoured side",
+  "description": "Wind veers steadily +25 deg over the first 500s, then holds. The right side of the course pays; committing to it (start on port, sail right, tack once) should beat both the boat that plays the wrong side and the one that keeps tacking on every wobble.",
+  "ref_twd": 0,
+  "wind": {
+    "type": "persistent",
+    "start_twd": 0,
+    "total_shift": 25,
+    "duration": 500,
+    "tws": 10
+  },
+  "course": { "type": "windward_leeward", "beat_length": 1200, "laps": 1 },
+  "run": { "dt": 0.5, "max_time": 2400, "sample_every": 4 },
+  "boats": [
+    {
+      "name": "Right side (one-tack, start port)",
+      "color": "#1f77b4",
+      "initial_tack": "port",
+      "strategy": { "name": "minimize_tacks" },
+      "polar": { "type": "synthetic", "max_speed": 7.5, "pointing": 1.1 }
+    },
+    {
+      "name": "Wrong side (one-tack, start stbd)",
+      "color": "#d62728",
+      "initial_tack": "starboard",
+      "strategy": { "name": "minimize_tacks" },
+      "polar": { "type": "synthetic", "max_speed": 7.5, "pointing": 1.1 }
+    },
+    {
+      "name": "Busy (tack on every header)",
+      "color": "#9467bd",
+      "initial_tack": "port",
+      "strategy": { "name": "tack_on_header", "threshold": 6 },
+      "polar": { "type": "synthetic", "max_speed": 7.5, "pointing": 1.1 }
+    }
+  ]
+}

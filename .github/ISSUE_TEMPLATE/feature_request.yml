@@ -1,0 +1,50 @@
+name: Feature Request
+description: Suggest a new feature or improvement
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What problem does this solve? What sailing question or scenario motivates it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should this work? Be as specific as you can.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you think about? Why is the proposed solution better?
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      description: How big is this change?
+      options:
+        - "Small — single field, strategy, or function"
+        - "Medium — multiple files, one module (e.g. a new wind model)"
+        - "Large — cross-module, new subsystem, or ops/deployment"
+        - "Not sure"
+
+  - type: checkboxes
+    id: model-area
+    attributes:
+      label: Model areas touched
+      description: Check anything this feature affects (helps reviewers, and flags the docs that must stay in sync).
+      options:
+        - label: Wind models
+        - label: Boat polars / speed model
+        - label: Tack/gybe strategies
+        - label: Simulation engine / safety nets
+        - label: Metrics or visualization
+        - label: Web UI / interactive viewer
+        - label: This adds or changes a control-panel field (so `web/docs.html` + tooltips must be updated — see CLAUDE.md)

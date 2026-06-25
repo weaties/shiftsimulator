@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>shiftsim — interactive</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b1a2b; --panel:#11151c; --line:#2a3340; --txt:#dde; --muted:#8aa; }
+  html,body { height:100%; margin:0; }
+  body { font-family: system-ui, sans-serif; color: var(--txt); background:#0d1117;
+         display:flex; height:100vh; overflow:hidden; font-size:13px; }
+  .col { display:flex; flex-direction:column; min-height:0; }
+  #controls { flex:0 0 320px; background:var(--panel); border-right:1px solid var(--line);
+              overflow:auto; padding:12px; }
+  #stage { flex:1 1 auto; min-width:0; }
+  #inspect { flex:0 0 340px; background:var(--panel); border-left:1px solid var(--line);
+             overflow:auto; padding:12px; }
+  canvas { flex:1 1 auto; min-height:0; width:100%; display:block; background:var(--bg); }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+       margin:16px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }
+  h2:first-child { margin-top:0; }
+  label { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:5px 0; }
+  label span { color:var(--muted); }
+  input, select { background:#0d1117; color:var(--txt); border:1px solid var(--line);
+                  border-radius:4px; padding:3px 6px; width:120px; }
+  input[type=color]{ padding:0; width:34px; height:22px; }
+  input[type=range]{ width:100%; }
+  button { background:#1f6feb; color:#fff; border:0; border-radius:5px; padding:7px 12px;
+           cursor:pointer; font-weight:600; }
+  button.sec { background:#30363d; }
+  button:disabled { opacity:.5; cursor:default; }
+  .boat { border:1px solid var(--line); border-radius:6px; padding:8px; margin:8px 0; }
+  .boat .top { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+  .boat .top input[type=text]{ flex:1; width:auto; }
+  .row { display:flex; gap:8px; }
+  table { border-collapse:collapse; width:100%; font-size:12px; }
+  th,td { text-align:right; padding:3px 5px; } th:first-child,td:first-child{ text-align:left; }
+  tr.sel { background:#1f6feb33; }
+  tr.boatrow { cursor:pointer; }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+  #playback { flex:0 0 auto; display:flex; gap:10px; align-items:center; padding:9px 12px;
+              background:#11151cdd; border-top:1px solid var(--line); }
+  #clock { font-variant-numeric:tabular-nums; min-width:60px; }
+  .mlog { font-size:12px; }
+  .mitem { border:1px solid var(--line); border-radius:5px; padding:6px 8px; margin:6px 0; cursor:pointer; }
+  .mitem.cur { border-color:#1f6feb; background:#1f6feb22; }
+  .mitem .h { display:flex; justify-content:space-between; }
+  .calc { font-family:ui-monospace,monospace; font-size:11px; background:#0d1117;
+          border:1px solid var(--line); border-radius:5px; padding:8px; margin-top:6px; white-space:pre-wrap; }
+  .tag { font-size:10px; padding:1px 5px; border-radius:8px; background:#30363d; color:var(--muted); }
+  .err { color:#f77; font-size:12px; }
+  .hint { color:var(--muted); font-size:11px; margin-top:6px; line-height:1.4; }
+  .chk { width:auto; }
+  .help { display:inline-block; width:14px; height:14px; line-height:13px; text-align:center;
+          border:1px solid var(--muted); border-radius:50%; color:var(--muted); font-size:10px;
+          margin-left:5px; cursor:help; text-decoration:none; flex:0 0 auto; }
+  .help:hover { color:#fff; border-color:#fff; background:#1f6feb55; }
+  h2 .help { border-color:#1f6feb; color:#58a6ff; }
+  #docsLink { color:#58a6ff; text-decoration:none; font-size:12px; }
+  label span { display:inline-flex; align-items:center; }
+</style>
+</head>
+<body>
+<!-- ================= CONTROLS ================= -->
+<div id="controls" class="col">
+  <div style="margin-bottom:8px"><a id="docsLink" href="docs.html" target="_blank">📖 How this works &amp; what each field means →</a></div>
+  <h2 data-help="sec-wind">Wind</h2>
+  <label><span data-help="wind-pattern">pattern</span>
+    <select id="windType">
+      <option value="oscillating">oscillating</option>
+      <option value="persistent">persistent shift</option>
+      <option value="puffy">puffs / velocity</option>
+      <option value="steady">steady</option>
+    </select></label>
+  <div data-wind="oscillating persistent steady puffy">
+    <label><span data-help="wind-speed">wind speed (kn)</span><input id="w_tws" type="number" value="10" step="0.5"></label>
+  </div>
+  <div data-wind="oscillating"><label><span data-help="mean-dir">mean dir (°)</span><input id="w_mean" type="number" value="0"></label></div>
+  <div data-wind="oscillating"><label><span data-help="amplitude">amplitude (°)</span><input id="w_amp" type="number" value="12"></label></div>
+  <div data-wind="oscillating"><label><span data-help="period">period (s)</span><input id="w_period" type="number" value="200"></label></div>
+  <div data-wind="persistent"><label><span data-help="start-dir">start dir (°)</span><input id="w_start" type="number" value="0"></label></div>
+  <div data-wind="persistent"><label><span data-help="total-shift">total shift (°)</span><input id="w_shift" type="number" value="25"></label></div>
+  <div data-wind="persistent"><label><span data-help="shift-duration">over (s)</span><input id="w_dur" type="number" value="500"></label></div>
+  <div data-wind="puffy"><label><span data-help="base-dir">base dir (°)</span><input id="w_pbase" type="number" value="0"></label></div>
+  <div data-wind="puffy"><label><span data-help="gust">gust ±fraction</span><input id="w_gust" type="number" value="0.3" step="0.05"></label></div>
+  <div data-wind="puffy"><label><span data-help="veer">dir wobble (°)</span><input id="w_veer" type="number" value="4"></label></div>
+  <div data-wind="puffy"><label><span data-help="seed">seed</span><input id="w_seed" type="number" value="1"></label></div>
+  <div data-wind="steady"><label><span data-help="steady-dir">dir (°)</span><input id="w_sdir" type="number" value="0"></label></div>
+
+  <h2 data-help="sec-course">Course &amp; run</h2>
+  <label><span data-help="beat-length">beat length (m)</span><input id="c_beat" type="number" value="1200" step="100"></label>
+  <label><span data-help="laps">laps</span><input id="c_laps" type="number" value="1" min="1"></label>
+  <label><span data-help="max-time">max time (s)</span><input id="r_max" type="number" value="3000" step="100"></label>
+
+  <h2 data-help="sec-boats">Boats <button class="sec" id="addBoat" style="float:right;padding:2px 8px">+ add</button></h2>
+  <div id="boats"></div>
+
+  <div style="margin-top:12px"><button id="run">▶ Run simulation</button></div>
+  <div id="status" class="hint"></div>
+
+  <h2>Results</h2>
+  <div id="results"><div class="hint">Run a simulation to see results.</div></div>
+</div>
+
+<!-- ================= STAGE ================= -->
+<div id="stage" class="col">
+  <canvas id="cv"></canvas>
+  <div id="playback">
+    <button id="play" class="sec">▶</button>
+    <input type="range" id="seek" min="0" max="100" value="0"/>
+    <span id="clock">0s</span>
+    <label style="margin:0"><span>speed</span>
+      <select id="speed" style="width:55px"><option>1</option><option selected>4</option><option>8</option><option>16</option></select></label>
+    <label style="margin:0" title="rotating ladder rungs"><input type="checkbox" id="showLadder" class="chk" checked> rungs</label>
+  </div>
+</div>
+
+<!-- ================= INSPECT ================= -->
+<div id="inspect" class="col">
+  <h2 data-help="ladder">Ladder</h2>
+  <div class="hint">Rungs are perpendicular to the wind — equal progress up the course.
+    As the wind shifts they rotate, and a boat on the lifted side jumps to a higher
+    rung. The gauge shows each boat's rung position right now.</div>
+  <div id="gauge"></div>
+
+  <h2 data-help="decision-pipeline">Maneuvers <span id="mcount" class="tag"></span></h2>
+  <div class="hint">Every tack/gybe with the calculation behind it. Click one to
+    jump there; the current one is highlighted as you play.</div>
+  <div id="mlog" class="mlog"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d');
+let data = null, frame = 0, playing = false, maxFrames = 0, selBoat = 0, allMans = [];
+
+// ---------- boats editor ----------
+// [paramKey, label, default, docAnchor]
+const STRATS = {
+  tack_at_half_header: [['amplitude','amplitude (°)',12,'strat-amplitude'],['fraction','fraction',0.5,'fraction']],
+  tack_on_header: [['threshold','threshold (°)',8,'threshold']],
+  tack_on_lift: [['threshold','threshold (°)',8,'strat-tack-on-lift']],
+  minimize_tacks: [],
+  fixed_interval: [['period','period (s)',120,'fixed-period']],
+};
+
+// field help: data-help key -> { a: docs.html anchor, t: hover tooltip }
+const HELP = {
+  'sec-wind': {a:'wind', t:'How the wind behaves over time.'},
+  'wind-pattern': {a:'wind', t:'The wind scenario: steady, oscillating, persistent shift, or puffs.'},
+  'wind-speed': {a:'wind-speed', t:'Base true wind speed (kn). Drives boat speed via the polar.'},
+  'mean-dir': {a:'mean-dir', t:'The average direction the oscillation swings around (0°=from North).'},
+  'amplitude': {a:'amplitude', t:'Peak swing each way from the mean, in degrees. Bigger = shiftier.'},
+  'period': {a:'period', t:'Seconds for one full oscillation (header→lift→header).'},
+  'start-dir': {a:'start-dir', t:'Wind direction at the start, before the persistent shift.'},
+  'total-shift': {a:'total-shift', t:'Total degrees the wind moves (+ = veers right, − = backs left).'},
+  'shift-duration': {a:'shift-duration', t:'Seconds the shift takes to play out, then it holds.'},
+  'base-dir': {a:'base-dir', t:'Average wind direction for the puffy field.'},
+  'gust': {a:'gust', t:'Peak ± fractional variation in wind SPEED (0.3 = ±30%).'},
+  'veer': {a:'veer', t:'How much direction wobbles with the puffs, in degrees.'},
+  'seed': {a:'seed', t:'Random seed; same seed = identical puffs (reproducible).'},
+  'steady-dir': {a:'steady-dir', t:'Constant wind direction (steady wind never shifts).'},
+  'sec-course': {a:'course', t:'The course geometry and run length.'},
+  'beat-length': {a:'beat-length', t:'Distance from start to the windward mark, in metres.'},
+  'laps': {a:'laps', t:'Number of windward-leeward laps.'},
+  'max-time': {a:'max-time', t:'Simulation cutoff; a boat not finished by here is DNF.'},
+  'sec-boats': {a:'strategies', t:'The fleet: each boat\'s strategy, tack cost and speed.'},
+  'strategy': {a:'strategies', t:'The tactic deciding WHEN this boat tacks/gybes.'},
+  'threshold': {a:'threshold', t:'Degrees of header (wind shift against you) before tacking.'},
+  'strat-amplitude': {a:'strat-amplitude', t:'Assumed oscillation amplitude; the boat tacks at fraction × this.'},
+  'fraction': {a:'fraction', t:'How deep into the header to tack: 0.5 = halfway.'},
+  'fixed-period': {a:'fixed-period', t:'Tack every N seconds (clock-based test strategy).'},
+  'strat-tack-on-lift': {a:'strat-tack-on-lift', t:'(control) tacks onto the header; expected to lose.'},
+  'start-tack': {a:'start-tack', t:'Which tack the boat starts the first beat on.'},
+  'tack-time': {a:'tack-time', t:'Seconds the boat is slowed recovering from a tack/gybe.'},
+  'recover-speed': {a:'recover-speed', t:'Speed multiplier at the worst of the maneuver (0.45 = 45%).'},
+  'boat-speed': {a:'boat-speed', t:'Top boat speed in strong breeze; scales the whole polar.'},
+  'ladder': {a:'ladder', t:'Rungs perpendicular to the wind = equal progress up the course.'},
+  'decision-pipeline': {a:'decision-pipeline', t:'How each tack/gybe is decided, with the calculation.'},
+};
+function decorate(root){
+  root.querySelectorAll('[data-help]').forEach(el => {
+    if (el.querySelector('.help')) return;            // already decorated
+    const h = HELP[el.dataset.help]; if (!h) return;
+    const a = document.createElement('a');
+    a.className='help'; a.textContent='?'; a.target='_blank';
+    a.href='docs.html#'+h.a; a.title=h.t;
+    a.addEventListener('click', e=>e.stopPropagation());
+    el.appendChild(a);
+  });
+}
+const PALETTE = ['#ff7f0e','#1f77b4','#2ca02c','#d62728','#9467bd','#17becf'];
+let boatSeq = 0;
+
+function boatCard(preset) {
+  const id = 'b'+(boatSeq++);
+  const div = document.createElement('div'); div.className='boat'; div.dataset.id=id;
+  const color = preset.color || PALETTE[boatSeq % PALETTE.length];
+  div.innerHTML = `
+    <div class="top">
+      <input type="color" value="${color}" data-f="color">
+      <input type="text" value="${preset.name}" data-f="name">
+      <button class="sec rm" style="padding:2px 7px">×</button>
+    </div>
+    <label><span data-help="strategy">strategy</span>
+      <select data-f="strategy">${Object.keys(STRATS).map(s=>`<option ${s===preset.strategy?'selected':''}>${s}</option>`).join('')}</select></label>
+    <div class="sparams"></div>
+    <label><span data-help="start-tack">start tack</span>
+      <select data-f="initial_tack"><option ${preset.tack==='starboard'?'selected':''}>starboard</option><option ${preset.tack==='port'?'selected':''}>port</option></select></label>
+    <div class="row">
+      <label style="flex:1"><span data-help="tack-time">tack time (s)</span><input type="number" data-f="maneuver_time" value="${preset.mtime??12}" style="width:60px"></label>
+      <label style="flex:1"><span data-help="recover-speed">recover speed×</span><input type="number" step="0.05" data-f="maneuver_speed_factor" value="${preset.msf??0.45}" style="width:60px"></label>
+    </div>
+    <label><span data-help="boat-speed">boat speed (kn)</span><input type="number" step="0.5" data-f="max_speed" value="${preset.max_speed??7.5}"></label>`;
+  $('boats').appendChild(div);
+  const sel = div.querySelector('[data-f=strategy]');
+  const renderParams = () => {
+    const wrap = div.querySelector('.sparams'); wrap.innerHTML='';
+    for (const [key,lbl,def,help] of STRATS[sel.value]) {
+      const pv = (preset.params && preset.params[key]!=null) ? preset.params[key] : def;
+      wrap.insertAdjacentHTML('beforeend',
+        `<label><span data-help="${help}">${lbl}</span><input type="number" step="0.1" data-p="${key}" value="${pv}"></label>`);
+    }
+    decorate(wrap);
+  };
+  sel.addEventListener('change', renderParams); renderParams();
+  div.querySelector('.rm').addEventListener('click', ()=>div.remove());
+  decorate(div);
+  return div;
+}
+
+function readBoats() {
+  return [...document.querySelectorAll('.boat')].map(div => {
+    const g = f => div.querySelector(`[data-f=${f}]`).value;
+    const strat = {name: g('strategy')};
+    div.querySelectorAll('[data-p]').forEach(i => strat[i.dataset.p] = parseFloat(i.value));
+    return {
+      name: g('name'), color: g('color'), initial_tack: g('initial_tack'),
+      maneuver_time: parseFloat(g('maneuver_time')),
+      maneuver_speed_factor: parseFloat(g('maneuver_speed_factor')),
+      strategy: strat,
+      polar: {type:'synthetic', max_speed: parseFloat(g('max_speed')), pointing: 1.1},
+    };
+  });
+}
+
+// default fleet
+[{name:'Half-header', strategy:'tack_at_half_header', tack:'starboard', color:'#ff7f0e', params:{amplitude:12,fraction:0.5}},
+ {name:'Tack on header', strategy:'tack_on_header', tack:'starboard', color:'#1f77b4', params:{threshold:8}},
+ {name:'One-tack', strategy:'minimize_tacks', tack:'starboard', color:'#2ca02c'}
+].forEach(boatCard);
+$('addBoat').addEventListener('click', ()=>boatCard({name:'Boat '+(boatSeq+1), strategy:'tack_on_header', tack:'starboard', params:{threshold:8}}));
+
+// ---------- wind field visibility ----------
+function syncWind(){
+  const t = $('windType').value;
+  document.querySelectorAll('[data-wind]').forEach(el =>
+    el.style.display = el.dataset.wind.split(' ').includes(t) ? '' : 'none');
+}
+$('windType').addEventListener('change', syncWind); syncWind();
+
+function refTwd(){
+  const t=$('windType').value;
+  if(t==='oscillating') return +$('w_mean').value;
+  if(t==='persistent') return +$('w_start').value + (+$('w_shift').value)/2;
+  if(t==='puffy') return +$('w_pbase').value;
+  return +$('w_sdir').value;
+}
+function windDict(){
+  const t=$('windType').value, tws=+$('w_tws').value;
+  if(t==='oscillating') return {type:t, mean_twd:+$('w_mean').value, amplitude:+$('w_amp').value, period:+$('w_period').value, tws};
+  if(t==='persistent') return {type:t, start_twd:+$('w_start').value, total_shift:+$('w_shift').value, duration:+$('w_dur').value, tws};
+  if(t==='puffy') return {type:t, base_twd:+$('w_pbase').value, base_tws:tws, gust_fraction:+$('w_gust').value, veer:+$('w_veer').value, seed:+$('w_seed').value};
+  return {type:'steady', twd:+$('w_sdir').value, tws};
+}
+function buildConfig(){
+  return {
+    name:'interactive', ref_twd:refTwd(), wind:windDict(),
+    course:{type:'windward_leeward', beat_length:+$('c_beat').value, laps:+$('c_laps').value},
+    run:{dt:0.5, max_time:+$('r_max').value, sample_every:4},
+    boats: readBoats(),
+  };
+}
+
+// ---------- run ----------
+async function run(){
+  $('run').disabled=true; $('status').textContent='Running…'; $('status').className='hint';
+  try {
+    const res = await fetch('/api/simulate', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(buildConfig())});
+    const d = await res.json();
+    if (!res.ok || d.error) throw new Error(d.error || ('HTTP '+res.status));
+    load(d); $('status').textContent='Done.';
+  } catch(e) {
+    $('status').textContent = 'Error: '+e.message + '  (is the server running? `python -m shiftsim serve`)';
+    $('status').className='err';
+  } finally { $('run').disabled=false; }
+}
+$('run').addEventListener('click', run);
+
+function load(d){
+  data=d; frame=0; selBoat=0; playing=false; setPlay();
+  maxFrames = Math.max(...d.boats.map(b=>b.frames.length));
+  $('seek').max = maxFrames-1;
+  allMans = [];
+  d.boats.forEach((b,bi)=> (b.maneuvers||[]).forEach(m => allMans.push({...m, boat:bi, name:b.name, color:b.color})));
+  allMans.sort((a,b)=>a.t-b.t);
+  renderResults(); renderMlog(); resize(); draw();
+}
+
+function renderResults(){
+  const rows = data.results.map((r,i)=>
+    `<tr class="boatrow ${i===selBoat?'sel':''}" data-bi="${i}">
+       <td><span class="sw" style="background:${r.color}"></span>${r.name}</td>
+       <td>${r.finished?r.finish_time.toFixed(0)+'s':'DNF'}</td>
+       <td>${r.n_tacks}/${r.n_gybes}</td></tr>`).join('');
+  $('results').innerHTML = `<table><tr><th>boat</th><th>finish</th><th>t/g</th></tr>${rows}</table>`;
+  document.querySelectorAll('.boatrow').forEach(tr=>tr.addEventListener('click',()=>{selBoat=+tr.dataset.bi; renderResults(); renderMlog(); draw();}));
+}
+
+// ---------- maneuver log ----------
+function fmtCalc(m){
+  const e = m.explain||{};
+  let s = `${m.kind.toUpperCase()} ${m.from}→${m.to}  @ ${m.t}s  (leg ${m.leg})\n`;
+  s += `reason: ${m.reason}\n`;
+  s += `wind ${m.twd}°  ${m.tws}kn   bearing to mark ${m.bearing_to_mark_deg}°\n`;
+  if (e.rule) s += `\nrule: ${e.rule}\n`;
+  for (const [k,v] of Object.entries(e)) if(k!=='rule') s += `  ${k} = ${v}\n`;
+  s += `\n≈ distance lost to this ${m.kind}: ${m.approx_distance_lost_m} m`;
+  s += `  (tack ${m.maneuver_time_s}s @ ${m.maneuver_speed_factor}× speed)`;
+  return s;
+}
+function renderMlog(){
+  $('mcount').textContent = allMans.length + ' total';
+  const t = curT();
+  const mine = allMans.map((m,gi)=>({...m, gi})).filter(m=>m.boat===selBoat);
+  let curIdx = -1; mine.forEach((m,i)=>{ if(m.t<=t+0.001) curIdx=i; });
+  $('mlog').innerHTML = mine.length ? mine.map((m,i)=>`
+    <div class="mitem ${i===curIdx?'cur':''}" data-t="${m.t}">
+      <div class="h"><b style="color:${m.color}">${m.kind} ${m.from[0]}→${m.to[0]}</b>
+        <span>${m.t}s · <span class="tag">${m.reason}</span></span></div>
+      ${i===curIdx?`<div class="calc">${fmtCalc(m)}</div>`:''}
+    </div>`).join('') : '<div class="hint">No maneuvers (select a boat above).</div>';
+  document.querySelectorAll('.mitem').forEach(el=>el.addEventListener('click',()=>{ seekToT(+el.dataset.t); }));
+}
+
+// ---------- canvas ----------
+function resize(){
+  const r=cv.getBoundingClientRect();
+  cv.width=r.width*devicePixelRatio; cv.height=r.height*devicePixelRatio;
+  if(data) draw();
+}
+window.addEventListener('resize', resize);
+
+function world(){
+  const b=data.bounds, pad=40*devicePixelRatio;
+  const s=Math.min((cv.width-2*pad)/(b.maxx-b.minx),(cv.height-2*pad)/(b.maxy-b.miny));
+  return {X:x=>pad+(x-b.minx)*s, Y:y=>cv.height-pad-(y-b.miny)*s, s, b};
+}
+function curFrame(b){ return b.frames[Math.min(frame,b.frames.length-1)]; }
+function curT(){ const f=data?curFrame(data.boats[0]):null; return f?f.t:0; }
+
+function draw(){
+  if(!data) return;
+  ctx.clearRect(0,0,cv.width,cv.height); ctx.fillStyle='#0b1a2b'; ctx.fillRect(0,0,cv.width,cv.height);
+  const W=world();
+  const f0=curFrame(data.boats[0]); const twd=f0?f0.twd:data.ref_twd;
+  if($('showLadder').checked) drawRungs(W, twd);
+  // marks
+  for(const m of data.course.marks){
+    ctx.beginPath(); ctx.arc(W.X(m.pos[0]),W.Y(m.pos[1]),6*devicePixelRatio,0,7);
+    ctx.fillStyle='#ff7043'; ctx.fill();
+    ctx.fillStyle='#9fb'; ctx.font=`${12*devicePixelRatio}px sans-serif`;
+    ctx.fillText(m.name, W.X(m.pos[0])+9*devicePixelRatio, W.Y(m.pos[1]));
+  }
+  drawWind(W, twd, f0?f0.tws:10);
+  // boats + tracks
+  data.boats.forEach((b,bi)=>{
+    const fi=Math.min(frame,b.frames.length-1);
+    ctx.strokeStyle=b.color; ctx.globalAlpha=bi===selBoat?.7:.3; ctx.lineWidth=(bi===selBoat?2.2:1.4)*devicePixelRatio;
+    ctx.beginPath();
+    for(let i=0;i<=fi;i++){const p=b.frames[i];(i?ctx.lineTo:ctx.moveTo).call(ctx,W.X(p.x),W.Y(p.y));}
+    ctx.stroke(); ctx.globalAlpha=1;
+    const p=b.frames[fi];
+    drawBoat(W.X(p.x),W.Y(p.y),p.hdg,b.color,p.man,bi===selBoat);
+  });
+  drawGauge(twd);
+  $('clock').textContent=(f0?f0.t:0).toFixed(0)+'s'; $('seek').value=frame;
+}
+function drawBoat(x,y,hdg,color,man,sel){
+  const r=(sel?9:7)*devicePixelRatio, a=(hdg-90)*Math.PI/180;
+  ctx.save(); ctx.translate(x,y); ctx.rotate(a);
+  ctx.beginPath(); ctx.moveTo(r,0); ctx.lineTo(-r*.7,r*.6); ctx.lineTo(-r*.7,-r*.6); ctx.closePath();
+  ctx.fillStyle=man?'#ffd54f':color; ctx.fill();
+  ctx.lineWidth=(sel?2:1)*devicePixelRatio; ctx.strokeStyle=sel?'#fff':'#0008'; ctx.stroke(); ctx.restore();
+}
+function drawWind(W,twd,tws){
+  const a=(twd+180-90)*Math.PI/180, cx=70*devicePixelRatio, cy=50*devicePixelRatio, L=24*devicePixelRatio;
+  ctx.save(); ctx.translate(cx,cy); ctx.rotate(a);
+  ctx.strokeStyle='#4caf50'; ctx.fillStyle='#4caf50'; ctx.lineWidth=3*devicePixelRatio;
+  ctx.beginPath(); ctx.moveTo(-L,0); ctx.lineTo(L,0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(L,0); ctx.lineTo(L-7*devicePixelRatio,5*devicePixelRatio); ctx.lineTo(L-7*devicePixelRatio,-5*devicePixelRatio); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle='#9ccc65'; ctx.font=`${12*devicePixelRatio}px sans-serif`;
+  ctx.fillText(`wind ${twd.toFixed(0)}° ${tws.toFixed(1)}kn`, cx-40*devicePixelRatio, cy+30*devicePixelRatio);
+}
+// rotating ladder rungs: lines perpendicular to the wind axis
+function drawRungs(W, twd){
+  const ux=Math.sin(twd*Math.PI/180), uy=Math.cos(twd*Math.PI/180);   // toward windward
+  const px=Math.cos(twd*Math.PI/180), py=-Math.sin(twd*Math.PI/180);  // along a rung
+  const b=W.b, corners=[[b.minx,b.miny],[b.maxx,b.miny],[b.minx,b.maxy],[b.maxx,b.maxy]];
+  const projs=corners.map(c=>c[0]*ux+c[1]*uy);
+  const lo=Math.min(...projs), hi=Math.max(...projs);
+  const spacing=100, span=4000;
+  ctx.strokeStyle='#ffffff14'; ctx.lineWidth=1*devicePixelRatio;
+  for(let L=Math.ceil(lo/spacing)*spacing; L<=hi; L+=spacing){
+    const mx=L*ux, my=L*uy;            // a point on this rung (world)
+    ctx.beginPath();
+    ctx.moveTo(W.X(mx-px*span), W.Y(my-py*span));
+    ctx.lineTo(W.X(mx+px*span), W.Y(my+py*span));
+    ctx.stroke();
+  }
+}
+// ladder gauge drawn in-canvas (top-right): each boat's rung position now
+function drawGauge(twd){
+  if(!data) return;
+  const ux=Math.sin(twd*Math.PI/180), uy=Math.cos(twd*Math.PI/180);
+  const vals = data.boats.map(b=>{const p=curFrame(b); return p.x*ux+p.y*uy;});
+  const lo=Math.min(...vals), hi=Math.max(...vals), rng=(hi-lo)||1;
+  const gx=cv.width-70*devicePixelRatio, top=60*devicePixelRatio, h=cv.height-160*devicePixelRatio;
+  ctx.strokeStyle='#5a6'; ctx.lineWidth=2*devicePixelRatio;
+  ctx.beginPath(); ctx.moveTo(gx,top); ctx.lineTo(gx,top+h); ctx.stroke();
+  ctx.fillStyle='#9fb'; ctx.font=`${11*devicePixelRatio}px sans-serif`;
+  ctx.fillText('ladder', gx-18*devicePixelRatio, top-8*devicePixelRatio);
+  ctx.fillText('↑ ahead', gx+8*devicePixelRatio, top+6*devicePixelRatio);
+  data.boats.forEach((b,bi)=>{
+    const y = top + h*(1-(vals[bi]-lo)/rng);
+    ctx.beginPath(); ctx.arc(gx, y, (bi===selBoat?6:4)*devicePixelRatio,0,7);
+    ctx.fillStyle=b.color; ctx.fill();
+    if(bi===selBoat){ ctx.strokeStyle='#fff'; ctx.lineWidth=1.5*devicePixelRatio; ctx.stroke(); }
+  });
+}
+
+// ---------- playback ----------
+function setPlay(){ $('play').textContent = playing?'⏸':'▶'; }
+function seekToT(t){
+  const fr = data.boats[0].frames;
+  let i=0; while(i+1<fr.length && fr[i+1].t<=t) i++;
+  frame=i; playing=false; setPlay(); draw(); renderMlog();
+}
+$('seek').addEventListener('input', e=>{ frame=+e.target.value; playing=false; setPlay(); draw(); renderMlog(); });
+$('play').addEventListener('click', ()=>{ playing=!playing; setPlay(); if(playing) tick(); });
+$('showLadder').addEventListener('change', draw);
+function tick(){
+  if(!playing||!data) return;
+  frame=Math.min(maxFrames-1, frame+ +$('speed').value);
+  draw(); renderMlog();
+  if(frame>=maxFrames-1){ playing=false; setPlay(); return; }
+  requestAnimationFrame(tick);
+}
+
+// auto-run on load so there's something to see
+window.addEventListener('load', ()=>{ decorate(document); resize(); run(); });
+</script>
+</body>
+</html>

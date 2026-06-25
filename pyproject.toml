@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shiftsim"
+version = "0.1.0"
+description = "A sailing tactics simulator for studying when to tack or gybe in wind shifts"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []   # core engine is pure standard library, by design
+
+[project.optional-dependencies]
+# Optional nicer charts; the engine also emits self-contained SVG with no deps.
+plots = ["matplotlib"]
+dev = ["pytest"]
+
+[project.scripts]
+shiftsim = "shiftsim.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

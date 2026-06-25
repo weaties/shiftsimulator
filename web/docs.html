@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>shiftsim — how it works</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, sans-serif; color:#dde; background:#0d1117; margin:0;
+         line-height:1.55; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 32px 24px 120px; }
+  header.top { position:sticky; top:0; background:#0d1117ee; backdrop-filter:blur(6px);
+               border-bottom:1px solid #2a3340; padding:10px 24px; }
+  header.top a { color:#58a6ff; text-decoration:none; font-size:13px; }
+  h1 { font-size:28px; margin:18px 0 4px; }
+  h2 { font-size:21px; margin:40px 0 8px; border-bottom:1px solid #2a3340; padding-bottom:6px; }
+  h3 { font-size:16px; margin:24px 0 4px; color:#9fd; }
+  h2, h3 { scroll-margin-top: 60px; }
+  code { background:#161b22; padding:1px 5px; border-radius:4px; font-size:13px; }
+  pre { background:#161b22; border:1px solid #2a3340; border-radius:6px; padding:12px;
+        overflow:auto; font-size:12.5px; }
+  table { border-collapse:collapse; width:100%; margin:10px 0; font-size:14px; }
+  th,td { border:1px solid #2a3340; padding:6px 9px; text-align:left; vertical-align:top; }
+  th { background:#161b22; }
+  .field { color:#ffd591; font-family:ui-monospace,monospace; }
+  .muted { color:#8aa; }
+  .note { background:#11203a; border-left:3px solid #1f6feb; padding:10px 14px; border-radius:0 6px 6px 0; margin:12px 0; }
+  .toc { columns:2; font-size:14px; }
+  .toc a { color:#58a6ff; text-decoration:none; }
+  a { color:#58a6ff; }
+  .key { color:#9fd; }
+</style>
+</head>
+<body>
+<header class="top"><a href="index.html">&larr; back to the simulator</a></header>
+<div class="wrap">
+
+<h1>shiftsim — how it works</h1>
+<p class="muted">A guide to the model behind the sailing-tactics simulator, and
+what every field on the control panel actually changes. Each field's
+<span style="border:1px solid #8aa;border-radius:50%;padding:0 4px;font-size:11px">?</span>
+links straight to the matching section here.</p>
+
+<div class="note">
+<b>The question this answers:</b> in a given wind, <i>when should you tack or
+gybe?</i> You set up a wind scenario and a fleet of boats with different
+decision rules, and the simulator races them on the same course and the same
+wind so you can see — and measure — which choices win, and why.
+</div>
+
+<h2>Contents</h2>
+<div class="toc">
+  <p><a href="#big-picture">The big picture</a><br/>
+  <a href="#conventions">Directions &amp; angles</a><br/>
+  <a href="#course">The course &amp; run settings</a><br/>
+  <a href="#wind">Wind models</a><br/>
+  <a href="#polars">The boat: polars &amp; speed</a><br/>
+  <a href="#sailing-the-shift">Sailing the shift</a><br/>
+  <a href="#maneuvers">Maneuvers &amp; their cost</a><br/>
+  <a href="#strategies">Strategies (when to tack)</a><br/>
+  <a href="#decision-pipeline">How a boat decides each step</a><br/>
+  <a href="#ladder">Ladder rungs &amp; the gauge</a><br/>
+  <a href="#metrics">Reading the results</a><br/>
+  <a href="#determinism">Reproducibility</a></p>
+</div>
+
+<h2 id="big-picture">The big picture</h2>
+<p>Every half-second, each boat:</p>
+<ol>
+  <li>reads the <b>wind</b> at its location (direction + speed);</li>
+  <li>works out its best <b>sailing angle</b> off the wind from its <a href="#polars">polar</a>, and so its heading on each tack;</li>
+  <li>asks its <a href="#strategies">strategy</a> whether to tack/gybe — unless a
+      <a href="#decision-pipeline">safety rule</a> (layline, etc.) forces the call;</li>
+  <li>moves at polar speed (reduced if it's mid-<a href="#maneuvers">maneuver</a>), and records the moment.</li>
+</ol>
+<p>All boats see the <b>same</b> wind, so the comparison is fair. Nothing is
+random unless you choose a <a href="#wind">puffy</a> wind, and even that is
+<a href="#determinism">seeded</a>. There is no boat-on-boat contact or
+right-of-way — this is a tactics sandbox, not a fleet-racing sim.</p>
+
+<h2 id="conventions">Directions &amp; angles</h2>
+<ul>
+  <li><b>Bearings</b> are degrees, <code>0° = North</code>, <code>90° = East</code>, clockwise — like a compass.</li>
+  <li><b>Wind direction</b> is where the wind blows <b>FROM</b> (nautical convention). A "Northerly" is <code>0°</code>. The windward mark is upwind, i.e. in the direction the wind comes from.</li>
+  <li><b>TWA</b> (true wind angle) is the angle between the boat's heading and the wind. Upwind it's small (~40°), downwind it's large (~150°).</li>
+  <li>A boat's heading is <code>wind&nbsp;direction&nbsp;±&nbsp;TWA</code>: <b>+</b> on port tack (wind over the left side), <b>−</b> on starboard (wind over the right).</li>
+</ul>
+
+<h2 id="course">The course &amp; run settings</h2>
+<p>The course is <b>windward-leeward</b>: start at the bottom, beat up to the
+windward mark, run back down to the leeward mark. A boat "rounds" a mark when it
+gets within the mark's radius, or passes closest to it within a capture radius
+(so it can't sail straight past).</p>
+<table>
+<tr><th>Field</th><th>What it controls</th></tr>
+<tr><td class="field" id="beat-length">beat length (m)</td><td>Distance from the start to the windward mark, in metres. Longer beats give the shifts more room to matter and amplify the differences between strategies.</td></tr>
+<tr><td class="field" id="laps">laps</td><td>How many up-and-down cycles to sail. 1 = one beat + one run. More laps = more chances for tactics (and noise) to accumulate.</td></tr>
+<tr><td class="field" id="max-time">max time (s)</td><td>The simulation cutoff. A boat that hasn't finished by this time is marked <b>DNF</b>. If a sensible boat DNFs, raise this — or it's a sign a strategy is struggling (see <a href="#decision-pipeline">safety nets</a>).</td></tr>
+</table>
+<p class="muted" id="dt">Two settings aren't on the panel but exist in a scenario file: <span class="field">dt</span> (the
+simulation timestep, default 0.5&nbsp;s — smaller = more accurate, slower) and
+<span class="field">sample_every</span> (how often a frame is recorded for the replay).</p>
+
+<h2 id="wind">Wind models</h2>
+<p>The <span class="field" id="wind-pattern">pattern</span> dropdown picks how the wind behaves over time. Every
+pattern also has a <span class="field" id="wind-speed">wind speed (kn)</span> — the base true wind speed in knots,
+which drives boat speed through the <a href="#polars">polar</a>.</p>
+
+<h3>Steady</h3>
+<p>Constant direction and speed — the control case. <span class="field" id="steady-dir">dir (°)</span> sets the
+fixed wind direction. With steady wind there are no shifts, so a good boat
+simply sails to the layline and tacks once; tactical strategies should
+<i>not</i> tack here (if they do, that's a bug).</p>
+
+<h3>Oscillating</h3>
+<p>The classic shifty day: direction swings back and forth like a sine wave
+around a mean. This is where "tack on the headers" is supposed to pay.</p>
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td class="field" id="mean-dir">mean dir (°)</td><td>The average direction the wind oscillates around.</td></tr>
+<tr><td class="field" id="amplitude">amplitude (°)</td><td>The peak swing each way from the mean. <code>12</code> means the wind ranges mean ±12°. Bigger amplitude = shiftier = bigger rewards (and penalties) for tactics.</td></tr>
+<tr><td class="field" id="period">period (s)</td><td>Seconds for one full cycle (header → lift → header). Short period = frequent shifts = lots of tacking opportunities; long period = you commit to a tack longer.</td></tr>
+</table>
+
+<h3>Persistent shift</h3>
+<p>The wind trends steadily one way, then holds — e.g. a sea breeze filling and
+veering right over the afternoon. Here the winning move is usually to sail
+toward the new wind first and minimise tacks, not to chase every wobble.</p>
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td class="field" id="start-dir">start dir (°)</td><td>Wind direction at the start, before the shift.</td></tr>
+<tr><td class="field" id="total-shift">total shift (°)</td><td>How far the wind moves in total. Positive = veers right (clockwise), negative = backs left.</td></tr>
+<tr><td class="field" id="shift-duration">over (s)</td><td>Seconds across which the shift plays out linearly; after that the wind holds at the new direction.</td></tr>
+</table>
+
+<h3>Puffs / velocity</h3>
+<p>Wind <b>speed</b> (and a little direction) varies as smooth, seeded noise —
+puffs and lulls. Useful for studying pressure rather than direction.</p>
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td class="field" id="base-dir">base dir (°)</td><td>The average wind direction.</td></tr>
+<tr><td class="field" id="gust">gust ±fraction</td><td>Peak fractional variation in wind <b>speed</b>. <code>0.3</code> = gusts/lulls of ±30% around the base speed.</td></tr>
+<tr><td class="field" id="veer">dir wobble (°)</td><td>How much the direction drifts as the pressure changes (pressure and direction usually move together on the water).</td></tr>
+<tr><td class="field" id="seed">seed</td><td>The random seed. The same seed always produces the identical puff sequence, so runs are reproducible and all boats face the same gusts.</td></tr>
+</table>
+<p class="muted">Advanced: a scenario file can also use a <b>composite</b> wind —
+e.g. an oscillation and puffs layered on top of a persistent trend. The web
+panel exposes the four base patterns; edit a <code>scenarios/*.json</code> for composites.</p>
+
+<h2 id="polars">The boat: polars &amp; speed</h2>
+<p>A <b>polar</b> is the core of the boat model: it gives boat speed as a function
+of the true wind angle (TWA) and the wind speed (TWS). Real boats are slowest
+head-to-wind, fastest on a reach (~90°), and slower again dead downwind. From the
+polar the simulator derives the two angles that matter:</p>
+<ul>
+  <li><b>Best upwind angle</b> — the TWA that maximises <i>velocity made good</i> toward the windward mark (speed × cos&nbsp;TWA). Typically ~40–45°.</li>
+  <li><b>Best downwind angle</b> — the TWA that maximises VMG toward the leeward mark. Typically ~140–160°.</li>
+</ul>
+<p>A boat always sails at the optimal angle for its current leg; the strategy
+only decides <i>which tack</i> to be on.</p>
+<table>
+<tr><th>Field</th><th>What it controls</th></tr>
+<tr><td class="field" id="boat-speed">boat speed (kn)</td><td>The boat's approximate top speed in strong breeze. It scales the whole polar — a higher value is a bigger/faster boat. (Internally this is <code>max_speed</code>; there's also a <code>pointing</code> parameter, fixed at 1.1 in the web UI, that sets how high the boat points upwind.)</td></tr>
+</table>
+<p class="muted">You can also load a real boat's polar (an ORC/VPP-style CSV of
+TWA × TWS) in a scenario file instead of the synthetic one.</p>
+
+<h2 id="sailing-the-shift">Sailing the shift — why shifts matter</h2>
+<p>A boat sailing upwind holds a <b>constant TWA</b> (its optimal angle). So when
+the wind shifts, the boat's <b>heading rotates with the wind</b>. That single fact
+is the engine of everything:</p>
+<ul>
+  <li>A <b>lift</b> is a shift that swings your heading <i>toward</i> the mark — you make better progress; stay.</li>
+  <li>A <b>header</b> swings your heading <i>away</i> from the mark — you're losing ground; the other tack is now favoured.</li>
+</ul>
+<p>On starboard tack a right-hand shift (wind veering) is a lift and a left-hand
+shift is a header; on port it's the mirror. "Tack on the headers" means: always
+be on the lifted tack.</p>
+<div class="note"><b>Key subtlety the model gets right:</b> a header is defined
+relative to the <b>wind</b>, not to the bearing to the mark. A boat that has
+simply sailed off to one side of the course <i>also</i> finds the other tack
+points more at the mark — but that's not a header and shouldn't trigger a tack
+(otherwise a boat zig-zags even in steady wind). So the strategies measure how
+far the wind has shifted against you relative to its running mean. Getting back
+to the middle is the <a href="#decision-pipeline">layline's</a> job, not the
+strategy's.</div>
+
+<h2 id="maneuvers">Maneuvers &amp; their cost</h2>
+<p>Tacking and gybing are slow: you turn through the wind, lose flow over the
+foils, and have to rebuild speed. That cost is why over-tacking loses, and it's
+the whole tension in the "when to tack" question. Each boat models it with two
+fields:</p>
+<table>
+<tr><th>Field</th><th>What it controls</th></tr>
+<tr><td class="field" id="tack-time">tack time (s)</td><td>How long the boat is slowed while recovering from a tack/gybe. During this window its speed ramps from the recovery factor back up to full. Bigger boats / sloppier crews = longer.</td></tr>
+<tr><td class="field" id="recover-speed">recover speed×</td><td>The speed multiplier at the <i>worst</i> point of the maneuver. <code>0.45</code> means the boat drops to 45% speed and recovers from there. Lower = a more expensive, costlier tack.</td></tr>
+</table>
+<p>The maneuver-log panel shows the approximate <b>distance lost</b> to each
+tack/gybe, computed from these two numbers and the boat's speed at the time. Try
+dropping <span class="field">recover speed×</span> to 0.25 and watch a busy boat fall down the
+<a href="#ladder">ladder</a>.</p>
+
+<h2 id="strategies">Strategies — when to tack</h2>
+<p>The <span class="field" id="strategy">strategy</span> is the decision rule you're studying: given the wind and
+the mark, should this boat tack/gybe now? The <span class="field" id="start-tack">start tack</span> sets which
+tack it begins the first beat on — which, in a persistent shift or when boats
+sail the same shifts, can decide who's ahead (see the
+<a href="#ladder">ladder</a> note).</p>
+
+<h3 id="strat-minimize">minimize_tacks</h3>
+<p>Never tacks voluntarily — sails the long board until the layline forces a
+single tack to the mark. In a <b>persistent shift</b>, combined with the right
+<span class="field">start tack</span>, this is the "commit to the favoured side" play and usually wins.</p>
+
+<h3 id="strat-tack-on-header">tack_on_header</h3>
+<p>Stay on the lifted tack: tack once the wind has <b>headed</b> you (shifted
+against your tack, relative to the mean) by more than the threshold.</p>
+<table>
+<tr><td class="field" id="threshold">threshold (°)</td><td>How big a header you tolerate before flipping, in degrees of wind shift. Small = twitchy (tacks early, near the median wind); large = patient (waits for a bigger header). In steady wind there's no header, so it never tacks. Note that in a clean oscillation the tack <i>frequency</i> is set by the wind's period — the threshold controls <i>how deep</i> into each header you tack, which is what affects your gain.</td></tr>
+</table>
+
+<h3 id="strat-half-header">tack_at_half_header</h3>
+<p>A refinement: instead of a fixed threshold, tack at a <b>fraction of the
+oscillation's amplitude</b> — halfway into the header by default. In a clean
+oscillation this puts the tack partway between the median heading and the maximum
+header, which is often the sweet spot.</p>
+<table>
+<tr><td class="field" id="strat-amplitude">amplitude (°)</td><td>The oscillation amplitude the boat assumes (set it to match the wind's amplitude). Leave it to auto-estimate in a scenario file by omitting it.</td></tr>
+<tr><td class="field" id="fraction">fraction</td><td>Where in the header to pull the trigger. <code>0.5</code> = halfway; smaller tacks earlier (nearer the median), larger waits deeper into the header. The boat tacks when it's headed by <code>fraction × amplitude</code> degrees.</td></tr>
+</table>
+
+<h3 id="strat-tack-on-lift">tack_on_lift</h3>
+<p>The classic blunder, kept as a <b>control</b>: it tacks when it's <i>lifted</i>
+(tacking onto the header). It should reliably lose to <code>tack_on_header</code>
+in oscillating breeze — a sanity check that the model rewards the right
+behaviour. Its <span class="field">threshold (°)</span> works the same way, just inverted.</p>
+
+<h3 id="strat-fixed">fixed_interval</h3>
+<p>Tacks on a clock every <span class="field" id="fixed-period">period (s)</span> seconds, ignoring the wind. Mostly
+for testing and demonstrations.</p>
+
+<h2 id="decision-pipeline">How a boat decides each step</h2>
+<p>The strategy is only part of the decision. Each step the simulator runs this
+pipeline (a maneuver happens at the first rule that fires, after a short debounce
+so a boat can't flip every step):</p>
+<ol>
+  <li><b>Sailing-away safety</b> — if the boat is pointing more than ~107° from the mark it has badly overstood; force a maneuver and enter "recovery" (strategy suppressed until it rounds). Guarantees a boat can never sail off to infinity.</li>
+  <li><b>Fetch lock</b> — if the boat is already laying the mark, never tack away from it.</li>
+  <li><b>Near the mark</b> — inside a small radius, only laylines act; no tactical tacks right at the mark.</li>
+  <li><b>Strategy</b> — the rule you chose.</li>
+  <li><b>Layline</b> — if the <i>other</i> tack now fetches the mark, tack so you don't overstand.</li>
+</ol>
+<div class="note">
+<b>Laylines use a smoothed (mean) wind, not the instantaneous direction.</b> A good
+tactician lays the mark on the average wind, so a momentary shift near the
+layline doesn't cause an early/late tack and a blown approach. The estimate
+adapts slowly enough to ignore oscillations but quickly enough to follow a
+persistent trend.<br/><br/>
+<b>Thrash-breaker:</b> if a boat maneuvers too many times in a short window it's
+fighting the safety net (a pathological strategy). It gets flagged "struggling"
+(shown as <code>struggled</code> in the results) and is sailed on laylines until
+the next mark — so even a bad rule finishes, it just finishes last.
+</div>
+
+<h2 id="ladder">Ladder rungs &amp; the gauge</h2>
+<p><b>Ladder rungs</b> are imaginary lines drawn <b>perpendicular to the wind</b>.
+Every point on a rung is the same distance "up the course" — so whoever is on the
+highest rung is winning, regardless of which side they're on.</p>
+<p>The faint lines on the course are the rungs. Because they're tied to the wind,
+<b>they rotate as the wind shifts</b> — and that's the whole point: when the wind
+shifts, two boats that were even suddenly aren't, because the rungs swung. The
+boat on the lifted side jumps to a higher rung "for free".</p>
+<p>The green <b>ladder gauge</b> on the right edge of the course shows each boat's
+current rung position, top = ahead. Watch the dots reshuffle on every shift.</p>
+<div class="note"><b>Why two similar boats can show parallel tracks:</b> if both
+correctly sail the shifts they converge onto the same tack and then move
+identically — so any gap from <i>starting on different tacks</i> is preserved as a
+constant offset (parallel lines). Start them on the same <span class="field">start tack</span> to
+compare the strategies themselves; the gauge still shows who the early
+side-selection put ahead.</div>
+
+<h2 id="metrics">Reading the results</h2>
+<table>
+<tr><th>Column / panel</th><th>Meaning</th></tr>
+<tr><td><b>finish</b></td><td>Elapsed seconds to round the last mark. <code>DNF</code> = didn't finish within <a href="#max-time">max time</a>.</td></tr>
+<tr><td><b>t/g</b></td><td>Number of tacks / gybes. Each one cost time (see <a href="#maneuvers">maneuvers</a>).</td></tr>
+<tr><td><b>Maneuvers panel</b></td><td>Every tack/gybe with the calculation behind it — the reason it fired, the wind, the header/threshold numbers, and the metres lost. Click one to jump there.</td></tr>
+<tr><td><b>Ladder gauge</b></td><td>Live rung position of each boat (see <a href="#ladder">above</a>).</td></tr>
+</table>
+<p>Headless runs (<code>python -m shiftsim run …</code>) also produce a
+<b>ladder-gain chart</b> — each boat's metres of gain over a reference boat across
+time — which makes it obvious <i>which shift</i> a lead was won on.</p>
+
+<h2 id="determinism">Reproducibility</h2>
+<p>A scenario plus its seeds fully determines a run. All boats see the same wind,
+puffs are seeded, and there's no wall-clock randomness — so the same setup always
+produces the identical result, and any difference between boats is due to their
+configuration, not luck. That's what makes the A/B comparison trustworthy.</p>
+
+<p class="muted" style="margin-top:40px">This page is part of the project and is
+kept in sync with the model as it evolves. If a field here doesn't match what you
+see, the docs are the bug — file it.</p>
+
+</div>
+</body>
+</html>

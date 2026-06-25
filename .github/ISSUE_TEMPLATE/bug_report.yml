@@ -1,0 +1,33 @@
+name: Bug Report
+description: Report something that behaves incorrectly
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you observe? A screenshot of the viewer often helps.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have happened instead? If it's a physics/tactics issue, say what the correct sailing behaviour would be.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: The scenario settings (wind pattern + params, boats/strategies, course) or the scenario JSON. The more exact, the faster the fix — runs are deterministic.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Output of `git rev-parse --short HEAD`, or the deployed URL.

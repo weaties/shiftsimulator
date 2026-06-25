@@ -1,0 +1,45 @@
+{
+  "name": "Oscillating breeze: tack on the headers",
+  "description": "Steady 10kn, direction oscillates +/-12 deg with a 200s period. The textbook case where tacking on the headers should beat sailing straight, and tacking on the lifts should be worst.",
+  "ref_twd": 0,
+  "wind": {
+    "type": "oscillating",
+    "mean_twd": 0,
+    "amplitude": 12,
+    "period": 200,
+    "phase": 0,
+    "tws": 10
+  },
+  "course": { "type": "windward_leeward", "beat_length": 1200, "laps": 1 },
+  "run": { "dt": 0.5, "max_time": 2400, "sample_every": 4 },
+  "boats": [
+    {
+      "name": "Headers (tack on header)",
+      "color": "#1f77b4",
+      "initial_tack": "starboard",
+      "strategy": { "name": "tack_on_header", "threshold": 8 },
+      "polar": { "type": "synthetic", "max_speed": 7.5, "pointing": 1.1 }
+    },
+    {
+      "name": "One-tack (minimize tacks)",
+      "color": "#2ca02c",
+      "initial_tack": "starboard",
+      "strategy": { "name": "minimize_tacks" },
+      "polar": { "type": "synthetic", "max_speed": 7.5, "pointing": 1.1 }
+    },
+    {
+      "name": "Lifts (control: tack on lift)",
+      "color": "#d62728",
+      "initial_tack": "starboard",
+      "strategy": { "name": "tack_on_lift", "threshold": 8 },
+      "polar": { "type": "synthetic", "max_speed": 7.5, "pointing": 1.1 }
+    },
+    {
+      "name": "Half-header (tack at half the header)",
+      "color": "#ff7f0e",
+      "initial_tack": "starboard",
+      "strategy": { "name": "tack_at_half_header", "amplitude": 12, "fraction": 0.5 },
+      "polar": { "type": "synthetic", "max_speed": 7.5, "pointing": 1.1 }
+    }
+  ]
+}

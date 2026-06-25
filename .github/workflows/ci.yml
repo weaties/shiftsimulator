@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, stage, live]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      # The engine is pure standard library — nothing to install.
+      - name: Run test suite
+        run: python tests/run_all.py
+
+  docs-sync:
+    # Guards the "keep the docs in sync" rule from CLAUDE.md: every field
+    # tooltip in the web UI must link to a real section in docs.html.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check every tooltip anchor resolves to a docs section
+        run: |
+          missing=$(comm -23 \
+            <(grep -oE "a:'[a-z-]+'" web/index.html | sed "s/a:'//;s/'//" | sort -u) \
+            <(grep -oE 'id="[a-z-]+"' web/docs.html | sed 's/id="//;s/"//' | sort))
+          if [ -n "$missing" ]; then
+            echo "::error::Field tooltips reference doc anchors that don't exist in web/docs.html:"
+            echo "$missing"
+            exit 1
+          fi
+          echo "All field tooltips resolve to docs.html sections."
