@@ -8,11 +8,11 @@ it, diff it.
 See ``scenarios/*.json`` for examples and the ``run-compare`` skill for the
 workflow around running one.
 """
+
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import List
 
 from .boat import BoatConfig, BoatState
 from .course import Course, windward_leeward
@@ -51,9 +51,8 @@ def boat_from_dict(d: dict) -> BoatConfig:
 def course_from_dict(d: dict, ref_twd: float) -> Course:
     if d.get("type") == "windward_leeward":
         return windward_leeward(
-            beat_length=d.get("beat_length", 1000.0),
-            mean_twd=ref_twd,
-            laps=d.get("laps", 1))
+            beat_length=d.get("beat_length", 1000.0), mean_twd=ref_twd, laps=d.get("laps", 1)
+        )
     return Course.from_dict(d)
 
 
@@ -62,13 +61,13 @@ class Scenario:
     name: str
     wind: WindField
     course: Course
-    boats: List[BoatConfig]
+    boats: list[BoatConfig]
     ref_twd: float = 0.0
     run: RunConfig = field(default_factory=RunConfig)
     description: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Scenario":
+    def from_dict(cls, d: dict) -> Scenario:
         ref_twd = d.get("ref_twd", 0.0)
         run = RunConfig(**d.get("run", {}))
         return cls(
@@ -82,13 +81,12 @@ class Scenario:
         )
 
     @classmethod
-    def load(cls, path: str) -> "Scenario":
+    def load(cls, path: str) -> Scenario:
         with open(path) as f:
             return cls.from_dict(json.load(f))
 
-    def run_sim(self) -> List[BoatState]:
+    def run_sim(self) -> list[BoatState]:
         """Instantiate fresh boat states at the start line and simulate them."""
-        states = [BoatState(cfg=c, pos=self.course.start, tack=c.initial_tack)
-                  for c in self.boats]
+        states = [BoatState(cfg=c, pos=self.course.start, tack=c.initial_tack) for c in self.boats]
         simulate(states, self.wind, self.course, self.ref_twd, self.run)
         return states

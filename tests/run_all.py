@@ -5,6 +5,7 @@
 (``pytest`` also works if you have it installed.) The ``validate-physics``
 skill uses this so the model can check the simulator anywhere.
 """
+
 import importlib
 import os
 import sys
@@ -15,8 +16,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "src"))
 
 
 def main() -> int:
-    modules = [f[:-3] for f in os.listdir(HERE)
-               if f.startswith("test_") and f.endswith(".py")]
+    modules = [f[:-3] for f in os.listdir(HERE) if f.startswith("test_") and f.endswith(".py")]
     sys.path.insert(0, HERE)
     passed = failed = 0
     failures = []

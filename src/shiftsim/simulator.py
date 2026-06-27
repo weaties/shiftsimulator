@@ -13,18 +13,21 @@ Each step, for every still-racing boat:
 4. Apply any maneuver (flip tack, start the speed-recovery penalty).
 5. Move at polar speed * maneuver factor, record a sample, check for rounding.
 """
+
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import List
+from typing import TYPE_CHECKING
 
 from .boat import BoatState, Sample
-from .course import Course
-from .geometry import (add, bearing_of, dot, norm, scale, sub, unit,
-                       wrap180, wrap360)
+from .geometry import add, bearing_of, dot, norm, scale, sub, unit, wrap180, wrap360
 from .strategy import StrategyContext
-from .wind import WindField
+
+if TYPE_CHECKING:
+    from .course import Course
+    from .geometry import Vec
+    from .wind import WindField
 
 KN_TO_MS = 0.514444
 
@@ -46,18 +49,19 @@ def other_tack(tack: str) -> str:
 class RunConfig:
     dt: float = 0.5
     max_time: float = 3600.0
-    sample_every: int = 2          # record a sample every N steps (replay size)
-    fetch_tol: float = 5.0         # deg; how close to the mark bearing counts as "laying" it
+    sample_every: int = 2  # record a sample every N steps (replay size)
+    fetch_tol: float = 5.0  # deg; how close to the mark bearing counts as "laying" it
     layline_wind_tau: float = 90.0  # s; smoothing for the wind estimate used for laylines
-    capture_radius: float = 50.0   # m; round the mark on closest approach within this
+    capture_radius: float = 50.0  # m; round the mark on closest approach within this
     no_maneuver_radius: float = 60.0  # m; inside this only laylines/recovery act, not tactics
-    thrash_limit: int = 4          # maneuvers within thrash_window before a boat is
-    thrash_window: float = 55.0    # s -- flagged "struggling" and sailed on laylines only
+    thrash_limit: int = 4  # maneuvers within thrash_window before a boat is
+    thrash_window: float = 55.0  # s -- flagged "struggling" and sailed on laylines only
 
 
 class Simulator:
-    def __init__(self, wind: WindField, course: Course, ref_twd: float,
-                 run: RunConfig | None = None):
+    def __init__(
+        self, wind: WindField, course: Course, ref_twd: float, run: RunConfig | None = None
+    ) -> None:
         self.wind = wind
         self.course = course
         self.ref_twd = ref_twd
@@ -90,14 +94,24 @@ class Simulator:
         brg = bearing_of(to_mark)
 
         # --- decide whether to maneuver -----------------------------------
-        can_maneuver = (t >= b.maneuver_end and
-                        (t - b.last_maneuver_t) >= b.cfg.min_time_between_maneuvers)
+        can_maneuver = (
+            t >= b.maneuver_end and (t - b.last_maneuver_t) >= b.cfg.min_time_between_maneuvers
+        )
         do_maneuver = False
         if can_maneuver:
             ctx = StrategyContext(
-                t=t, dt=self.run.dt, point_of_sail=pos_kind, tack=b.tack,
-                twd=twd, tws=tws, twa=twa, heading_current=h_cur,
-                heading_other=h_oth, bearing_to_mark=brg, dist_to_mark=dist)
+                t=t,
+                dt=self.run.dt,
+                point_of_sail=pos_kind,
+                tack=b.tack,
+                twd=twd,
+                tws=tws,
+                twa=twa,
+                heading_current=h_cur,
+                heading_other=h_oth,
+                bearing_to_mark=brg,
+                dist_to_mark=dist,
+            )
             laying, at_layline = self._fetch_state(b, twa, to_mark, brg)
             # Hard safety: if pointing > ~107 deg from the mark the boat has
             # badly overstood. Force a maneuver and enter "recovery" -- the
@@ -114,9 +128,9 @@ class Simulator:
                 do_maneuver = at_layline
                 reason = "layline_recovery"
             elif laying:
-                do_maneuver = False          # fetch lock: never tack off the layline
+                do_maneuver = False  # fetch lock: never tack off the layline
             elif dist < self.run.no_maneuver_radius:
-                do_maneuver = at_layline      # near the mark, only fetch -- no tactics
+                do_maneuver = at_layline  # near the mark, only fetch -- no tactics
                 reason = "layline_approach"
             elif b.cfg.strategy.decide(ctx):
                 do_maneuver = True
@@ -136,16 +150,26 @@ class Simulator:
         vel = scale(unit(h_cur), speed_kn * KN_TO_MS)
         b.pos = add(b.pos, scale(vel, self.run.dt))
 
-        vmg = dot(vel, unit(brg))                         # toward target mark
-        ladder = dot(b.pos, self._ladder_axis)            # progress up wind axis
+        vmg = dot(vel, unit(brg))  # toward target mark
+        ladder = dot(b.pos, self._ladder_axis)  # progress up wind axis
 
         if record:
-            b.history.append(Sample(
-                t=round(t + self.run.dt, 3), pos=(round(b.pos[0], 2), round(b.pos[1], 2)),
-                heading=round(h_cur, 1), tack=b.tack, twa=round(twa, 1),
-                twd=round(twd, 2), tws=round(tws, 2), boat_speed=round(speed_kn, 3),
-                vmg=round(vmg, 3), ladder=round(ladder, 2), leg=b.leg,
-                maneuvering=factor < 0.999))
+            b.history.append(
+                Sample(
+                    t=round(t + self.run.dt, 3),
+                    pos=(round(b.pos[0], 2), round(b.pos[1], 2)),
+                    heading=round(h_cur, 1),
+                    tack=b.tack,
+                    twa=round(twa, 1),
+                    twd=round(twd, 2),
+                    tws=round(tws, 2),
+                    boat_speed=round(speed_kn, 3),
+                    vmg=round(vmg, 3),
+                    ladder=round(ladder, 2),
+                    leg=b.leg,
+                    maneuvering=factor < 0.999,
+                )
+            )
 
         # --- rounding -----------------------------------------------------
         # Round when inside the rounding radius, or on closest approach within
@@ -154,7 +178,7 @@ class Simulator:
         d_now = norm(sub(mark.pos, b.pos))
         prev_d = getattr(b, "_prev_dist", None)
         b._prev_dist = d_now  # type: ignore[attr-defined]
-        passed = (prev_d is not None and d_now > prev_d and d_now < self.run.capture_radius)
+        passed = prev_d is not None and d_now > prev_d and d_now < self.run.capture_radius
         if d_now <= mark.rounding_radius or passed:
             b.leg += 1
             b._prev_dist = None  # type: ignore[attr-defined]
@@ -164,7 +188,7 @@ class Simulator:
                 b.finish_time = round(t + self.run.dt, 2)
 
     # -- layline / fetch detection -----------------------------------------
-    def _fetch_state(self, b: BoatState, twa: float, to_mark, brg: float):
+    def _fetch_state(self, b: BoatState, twa: float, to_mark: Vec, brg: float) -> tuple[bool, bool]:
         """Return ``(laying, at_layline)`` for the current target mark.
 
         Both are judged against the *mean* wind estimate (``_wind_ema``), not
@@ -192,7 +216,16 @@ class Simulator:
         return laying, at_layline
 
     # -- maneuver explanation (the "show the calculation" feature) ----------
-    def _explain_maneuver(self, b, t, pos_kind, reason, ctx, twa, tws) -> dict:
+    def _explain_maneuver(
+        self,
+        b: BoatState,
+        t: float,
+        pos_kind: str,
+        reason: str | None,
+        ctx: StrategyContext,
+        twa: float,
+        tws: float,
+    ) -> dict:
         """Build the record of why this tack/gybe happened and the numbers
         behind it, for the web viewer's per-maneuver calculation panel."""
         ec = round(ctx.err(ctx.heading_current), 1)
@@ -200,14 +233,20 @@ class Simulator:
         if reason == "strategy":
             expl = b.cfg.strategy.explain(ctx)
         elif reason and reason.startswith("layline"):
-            note = {"layline": "reached the layline",
-                    "layline_approach": "reached the layline (near the mark — tactics off)",
-                    "layline_recovery": "reached the layline (recovering after overstanding)"}[reason]
-            expl = {"rule": f"{note}: the other tack now fetches the mark",
-                    "err_other_to_mark_deg": eo, "fetch_tol_deg": self.run.fetch_tol}
+            note = {
+                "layline": "reached the layline",
+                "layline_approach": "reached the layline (near the mark — tactics off)",
+                "layline_recovery": "reached the layline (recovering after overstanding)",
+            }[reason]
+            expl = {
+                "rule": f"{note}: the other tack now fetches the mark",
+                "err_other_to_mark_deg": eo,
+                "fetch_tol_deg": self.run.fetch_tol,
+            }
         elif reason == "sailing_away":
-            expl = {"rule": "overstood — heading was >107 deg from the mark; "
-                            "forced maneuver + recovery"}
+            expl = {
+                "rule": "overstood — heading was >107 deg from the mark; forced maneuver + recovery"
+            }
         else:
             expl = {}
         # approximate distance given up to the maneuver: lost speed integrated
@@ -215,12 +254,17 @@ class Simulator:
         v = b.cfg.polar.speed(twa, tws) * KN_TO_MS
         dist_lost = v * b.cfg.maneuver_time * (1.0 - (b.cfg.maneuver_speed_factor + 1.0) / 2.0)
         return {
-            "t": round(t, 1), "leg": b.leg,
+            "t": round(t, 1),
+            "leg": b.leg,
             "kind": "tack" if pos_kind == "upwind" else "gybe",
-            "from": b.tack, "to": other_tack(b.tack), "reason": reason,
-            "twd": round(ctx.twd, 1), "tws": round(ctx.tws, 2),
+            "from": b.tack,
+            "to": other_tack(b.tack),
+            "reason": reason,
+            "twd": round(ctx.twd, 1),
+            "tws": round(ctx.tws, 2),
             "bearing_to_mark_deg": round(ctx.bearing_to_mark, 1),
-            "err_current_deg": ec, "err_other_deg": eo,
+            "err_current_deg": ec,
+            "err_other_deg": eo,
             "approx_distance_lost_m": round(dist_lost, 1),
             "maneuver_time_s": b.cfg.maneuver_time,
             "maneuver_speed_factor": b.cfg.maneuver_speed_factor,
@@ -254,8 +298,13 @@ class Simulator:
         return msf + (1.0 - msf) * max(0.0, min(1.0, frac))
 
 
-def simulate(boats: List[BoatState], wind: WindField, course: Course,
-             ref_twd: float, run: RunConfig | None = None) -> None:
+def simulate(
+    boats: list[BoatState],
+    wind: WindField,
+    course: Course,
+    ref_twd: float,
+    run: RunConfig | None = None,
+) -> None:
     """Run all boats to completion (or ``max_time``), recording histories
     in-place on each :class:`BoatState`."""
     sim = Simulator(wind, course, ref_twd, run)
@@ -268,17 +317,27 @@ def simulate(boats: List[BoatState], wind: WindField, course: Course,
         # seed an initial sample so replays start at the line
         twd, tws = wind.at(0.0, b.pos)
         b._wind_ema = twd  # type: ignore[attr-defined]
-        b.history.append(Sample(
-            t=0.0, pos=(round(b.pos[0], 2), round(b.pos[1], 2)),
-            heading=heading_for(b.tack, twd, b.cfg.polar.best_upwind(tws)[0]),
-            tack=b.tack, twa=b.cfg.polar.best_upwind(tws)[0], twd=round(twd, 2),
-            tws=round(tws, 2), boat_speed=0.0, vmg=0.0,
-            ladder=round(dot(b.pos, sim._ladder_axis), 2), leg=0, maneuvering=False))
+        b.history.append(
+            Sample(
+                t=0.0,
+                pos=(round(b.pos[0], 2), round(b.pos[1], 2)),
+                heading=heading_for(b.tack, twd, b.cfg.polar.best_upwind(tws)[0]),
+                tack=b.tack,
+                twa=b.cfg.polar.best_upwind(tws)[0],
+                twd=round(twd, 2),
+                tws=round(tws, 2),
+                boat_speed=0.0,
+                vmg=0.0,
+                ladder=round(dot(b.pos, sim._ladder_axis), 2),
+                leg=0,
+                maneuvering=False,
+            )
+        )
 
     n_steps = int(math.ceil(rc.max_time / rc.dt))
     for i in range(n_steps):
         t = i * rc.dt
-        record = (i % rc.sample_every == 0)
+        record = i % rc.sample_every == 0
         if all(b.finished for b in boats):
             break
         for b in boats:

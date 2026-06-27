@@ -9,13 +9,16 @@ A :class:`Strategy` decides *when* to flip tacks. Flipping costs time: during a
 maneuver the boat's speed is knocked down and recovers over ``maneuver_time``
 seconds, which is the price every extra tack/gybe pays.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import TYPE_CHECKING
 
-from .geometry import Vec
-from .polar import Polar
+if TYPE_CHECKING:
+    from .geometry import Vec
+    from .polar import Polar
+    from .strategy import Strategy
 
 
 @dataclass
@@ -24,12 +27,12 @@ class BoatConfig:
 
     name: str
     polar: Polar
-    strategy: "object"               # a Strategy instance (see strategy.py)
-    maneuver_time: float = 12.0      # seconds to recover from a tack/gybe
+    strategy: Strategy
+    maneuver_time: float = 12.0  # seconds to recover from a tack/gybe
     maneuver_speed_factor: float = 0.45  # speed multiplier at the worst of a maneuver
     min_time_between_maneuvers: float = 8.0  # debounce so a boat can't flip every step
     initial_tack: str = "starboard"  # which tack to start the first beat on
-    color: str = "#1f77b4"           # for the web replay / charts
+    color: str = "#1f77b4"  # for the web replay / charts
 
 
 @dataclass
@@ -44,8 +47,8 @@ class Sample:
     twd: float
     tws: float
     boat_speed: float
-    vmg: float            # made-good toward the current target mark
-    ladder: float         # progress up the wind axis (for ladder-rung gains)
+    vmg: float  # made-good toward the current target mark
+    ladder: float  # progress up the wind axis (for ladder-rung gains)
     leg: int
     maneuvering: bool
 
@@ -58,15 +61,15 @@ class BoatState:
     pos: Vec
     tack: str
     leg: int = 0
-    maneuver_end: float = -1.0       # t until which the boat is recovering
+    maneuver_end: float = -1.0  # t until which the boat is recovering
     last_maneuver_t: float = -1e9
     n_tacks: int = 0
     n_gybes: int = 0
-    n_struggled: int = 0          # times the thrash-breaker had to rescue the boat
+    n_struggled: int = 0  # times the thrash-breaker had to rescue the boat
     finished: bool = False
-    finish_time: Optional[float] = None
-    history: List[Sample] = field(default_factory=list)
-    maneuvers: List[dict] = field(default_factory=list)  # the why+numbers of each tack/gybe
+    finish_time: float | None = None
+    history: list[Sample] = field(default_factory=list)
+    maneuvers: list[dict] = field(default_factory=list)  # the why+numbers of each tack/gybe
 
     @property
     def maneuvering_at(self) -> float:

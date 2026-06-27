@@ -10,6 +10,7 @@ and the CLI always agree, and there's still nothing to install. Run it with:
 
     python -m shiftsim serve            # then open http://localhost:8000/web/
 """
+
 from __future__ import annotations
 
 import json
@@ -28,12 +29,12 @@ MAX_BODY = 1 << 20  # 1 MB is plenty for a scenario config
 # defaults a real user picks are orders of magnitude under them.
 LIMITS = {
     "max_boats": 16,
-    "min_dt": 0.2,          # s — finer timesteps multiply the work
-    "max_time": 7200.0,     # s — simulated seconds
+    "min_dt": 0.2,  # s — finer timesteps multiply the work
+    "max_time": 7200.0,  # s — simulated seconds
     "max_laps": 12,
-    "max_step_boats": 500_000,   # (max_time / dt) * boats — the real work budget.
-                                 # Reasonable runs are far under (3 boats × 3000s/0.5 ≈ 18k);
-                                 # this only catches pathological many-boats × long × fine-dt combos.
+    "max_step_boats": 500_000,  # (max_time / dt) * boats — the real work budget.
+    # Reasonable runs are far under (3 boats × 3000s/0.5 ≈ 18k);
+    # this only catches pathological many-boats × long × fine-dt combos.
 }
 
 
@@ -67,7 +68,8 @@ def validate_request(cfg: dict) -> None:
     if budget > LIMITS["max_step_boats"]:
         raise RequestTooLarge(
             f"work budget exceeded ({int(budget):,} step-boats > "
-            f"{LIMITS['max_step_boats']:,}); reduce max_time, raise dt, or use fewer boats")
+            f"{LIMITS['max_step_boats']:,}); reduce max_time, raise dt, or use fewer boats"
+        )
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -110,7 +112,7 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001  (report any config error to the UI)
             self._send_json(400, {"error": f"{type(e).__name__}: {e}"})
 
-    def log_message(self, *args) -> None:  # quieter console
+    def log_message(self, *args: object) -> None:  # quieter console
         pass
 
 
