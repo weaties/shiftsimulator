@@ -4,6 +4,20 @@ Release notes for shiftsim. The `promote.yml` workflow gates `main → stage`
 on a new `##` heading here (commit sets that only touch `docs/roadmap.md` are
 exempt). `stage → live` has no gate.
 
+## 0.4.0 — In-app feedback footer (version stamp + bug/feature links)
+
+- New read-only `GET /api/version` endpoint reports the running build
+  (`hostname`, `branch`, `sha`, `dirty`) from git — sandbox-safe
+  (`safe.directory` + `--no-optional-locks`, degrades to `"unknown"` rather than
+  erroring outside a checkout).
+- The viewer gains a **footer** showing `host · branch @ commit · clean/dirty`,
+  plus **Report a bug** / **Request a feature** links that deep-link to GitHub's
+  pre-filled issue form (client-side, no server token, labelled `from-app`).
+- Bug reports **embed the current scenario JSON**, so every report reproduces the
+  run 1:1 — the project's determinism ethos.
+- Docs: new `web/docs.html#feedback` section + matching tooltip/anchor. Mirrors
+  helmlog's feedback-footer pattern. Closes #9.
+
 ## 0.3.0 — Release-promotion gate + parity with helmlog
 
 - `.github/workflows/promote.yml` — manual, fast-forward-only promotion of
