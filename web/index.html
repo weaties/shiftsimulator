@@ -146,6 +146,8 @@
   <a href="#" id="reportBug">Report a bug</a>
   <span class="sep">·</span>
   <a href="#" id="reportFeature">Request a feature</a>
+  <span class="sep">·</span>
+  <a href="admin.html" data-help="admin">deploy status</a>
 </footer>
 
 <script>
@@ -197,6 +199,7 @@ const HELP = {
   'ladder': {a:'ladder', t:'Rungs perpendicular to the wind = equal progress up the course.'},
   'decision-pipeline': {a:'decision-pipeline', t:'How each tack/gybe is decided, with the calculation.'},
   'feedback': {a:'feedback', t:'The running build (host · branch @ commit · clean/dirty), and links to report a bug or request a feature on GitHub.'},
+  'admin': {a:'admin', t:'Deployment status: what is running, the main/stage/live pipeline, and (unauthenticated) deploy/restart actions.'},
 };
 function decorate(root){
   root.querySelectorAll('[data-help]').forEach(el => {

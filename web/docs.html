@@ -311,6 +311,27 @@ it back in and reproduce your exact run 1:1 — the whole point of the
 <a href="#determinism">deterministic</a> model. Tidy up the pre-filled
 description, add what you saw, and submit.</p>
 
+<h2 id="admin">The deploy page</h2>
+<p>The <a href="admin.html">deploy status page</a> (linked from the viewer footer)
+is the operations view. It shows what's <b>running</b> on this box, what's <b>on
+disk</b> (and whether they differ — i.e. a deploy pulled new code but the service
+hasn't restarted), the tracked branch, and how many commits the box is behind.</p>
+<p>The <b>promotion pipeline</b> shows the three deployment tiers — <span
+class="mono">main → stage → live</span> — with the commit gap between each, and a
+<b>promotion history</b> read from the dated git tags. Promotions themselves run
+in CI (the <span class="mono">promote.yml</span> workflow); the page only
+<i>shows</i> them.</p>
+<p>Two actions are available: <b>Deploy now</b> (fetch the tracked branch, hard-reset
+the checkout to it, and restart the service) and <b>Restart service</b>. Deploy is
+restricted to the trusted <span class="mono">main / stage / live</span> branches —
+it can never pull an arbitrary ref.</p>
+<div class="note"><b>Security:</b> the deploy page is <b>not behind any login</b>.
+On the deployed box it's reachable by anyone who can open <span
+class="mono">/sim/</span>, so anyone on the network can trigger a deploy or
+restart. This is a deliberate choice for a trusted crew network; because deploy is
+limited to already-reviewed branches, the worst case is redeploying known-good
+code, not running something new.</div>
+
 <p class="muted" style="margin-top:40px">This page is part of the project and is
 kept in sync with the model as it evolves. If a field here doesn't match what you
 see, the docs are the bug — file it.</p>

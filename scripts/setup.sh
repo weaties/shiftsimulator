@@ -90,6 +90,26 @@ sudo systemctl enable --now shiftsim
 sudo systemctl restart shiftsim
 
 # ---------------------------------------------------------------------------
+# 3b) Scoped sudo for the web deploy page (web/admin.html)
+# ---------------------------------------------------------------------------
+# Lets the unprivileged "$SERVICE_USER" service account deploy & restart itself
+# from the (UNAUTHENTICATED — see docs/specs/admin-page.md) admin page. Grants are
+# deliberately narrow: restart *this* service, and git on *this* checkout only
+# (the tree is root-owned, so git writes need root). Mirrors helmlog's
+# helmlog-allowed drop-in, scoped tighter with -C "$PROJECT_DIR".
+step "Installing scoped sudoers for the deploy page..."
+sudo tee /etc/sudoers.d/shiftsim > /dev/null <<EOF
+$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart shiftsim
+$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/git -C $PROJECT_DIR *
+EOF
+sudo chmod 0440 /etc/sudoers.d/shiftsim
+# Refuse a malformed file rather than wedge sudo.
+if ! sudo visudo -cf /etc/sudoers.d/shiftsim; then
+    warn "sudoers drop-in failed validation; removing it (deploy page actions will be disabled)."
+    sudo rm -f /etc/sudoers.d/shiftsim
+fi
+
+# ---------------------------------------------------------------------------
 # 4) nginx — only on a dedicated host (--standalone-nginx)
 # ---------------------------------------------------------------------------
 if [[ $WITH_NGINX -eq 1 ]]; then
@@ -124,4 +144,4 @@ if [[ $WITH_NGINX -eq 1 ]]; then
 else
     step "Done (service-only). Once helmlog's nginx has the /sim/ location:  http://$HOST/sim/"
 fi
-echo "    Update later with:  bash $SCRIPT_DIR/deploy.sh"
+echo "    Update later with:  bash $SCRIPT_DIR/deploy.sh   (or the web deploy page: /sim/web/admin.html)"

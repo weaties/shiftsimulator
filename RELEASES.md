@@ -4,6 +4,25 @@ Release notes for shiftsim. The `promote.yml` workflow gates `main → stage`
 on a new `##` heading here (commit sets that only touch `docs/roadmap.md` are
 exempt). `stage → live` has no gate.
 
+## 0.5.0 — Deploy/admin status page
+
+- New **`web/admin.html`** deploy page (linked from the viewer footer), the
+  shiftsim analogue of helmlog's `/admin/deployment`: shows the running build vs
+  what's on disk, the `main → stage → live` promotion pipeline with commit gaps,
+  and promotion history (from the dated git tags).
+- Actions: **Deploy now** (fetch + hard-reset the checkout to a trusted branch +
+  restart) and **Restart service**, served by new stdlib endpoints
+  `GET /api/admin/{status,pipeline,promotions}` and `POST /api/admin/{deploy,restart}`
+  in `serve.py` / the new `shiftsim.admin` module.
+- **Unauthenticated by explicit owner decision** (the box is on a trusted crew
+  network). Blast radius bounded by non-auth guardrails: deploy is limited to the
+  trusted `main`/`stage`/`live` branches (never an arbitrary ref), a single-flight
+  lock serialises deploys, and every privileged call is a fixed `argv` (no shell).
+- `scripts/setup.sh` installs a scoped `/etc/sudoers.d/shiftsim` (restart this
+  service + git on the checkout only), validated with `visudo -cf`.
+- Docs: `web/docs.html#admin` section (incl. the security note) + footer tooltip.
+  Closes #11.
+
 ## 0.4.0 — In-app feedback footer (version stamp + bug/feature links)
 
 - New read-only `GET /api/version` endpoint reports the running build

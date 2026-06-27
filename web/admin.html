@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>shiftsim — deploy</title>
+<style>
+  :root { color-scheme: dark; --bg:#0d1117; --panel:#11151c; --line:#2a3340; --txt:#dde; --muted:#8aa;
+          --ok:#2ea043; --warn:#d29922; --bad:#f85149; --accent:#58a6ff; }
+  html,body { margin:0; background:var(--bg); color:var(--txt);
+              font-family:system-ui,sans-serif; font-size:14px; }
+  a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+  .wrap { max-width:880px; margin:0 auto; padding:20px 16px 60px; }
+  header { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:6px; }
+  h1 { font-size:20px; margin:0; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+       margin:22px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 16px; }
+  .kv { display:grid; grid-template-columns:max-content 1fr; gap:4px 14px; align-items:center; }
+  .kv .k { color:var(--muted); } .mono { font-family:ui-monospace,monospace; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:11px; font-size:12px; font-weight:600; }
+  .badge.ok { background:#1b3a26; color:#5ddc8a; } .badge.warn { background:#3a3320; color:#e3c878; }
+  .badge.bad { background:#3a2020; color:#ff8a82; }
+  .dirty { color:#f5a; } .clean { color:#5ddc8a; }
+  .actions { margin-top:14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  button { background:#1f6feb; color:#fff; border:0; border-radius:6px; padding:8px 14px;
+           font-weight:600; cursor:pointer; } button.sec { background:#30363d; }
+  button:disabled { opacity:.5; cursor:default; }
+  select { background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:5px; padding:6px 8px; }
+  .pipe { display:grid; grid-template-columns:1fr auto 1fr auto 1fr; gap:8px; align-items:center; }
+  .tier { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .tier .name { font-weight:700; text-transform:uppercase; font-size:11px; letter-spacing:.05em; color:var(--muted); }
+  .tier .msg { color:var(--muted); font-size:12px; margin-top:4px;
+               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:10px; white-space:nowrap; }
+  .pill.ok { background:#1b3a26; color:#5ddc8a; } .pill.warn { background:#3a3320; color:#e3c878; }
+  .pill.bad { background:#3a2020; color:#ff8a82; }
+  table { border-collapse:collapse; width:100%; font-size:13px; margin-top:4px; }
+  th,td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; }
+  .warnbar { background:#2a1f12; border:1px solid #5a3d1a; color:#e3c878; border-radius:8px;
+             padding:9px 12px; font-size:12.5px; margin:10px 0 4px; }
+  #msg { margin-top:12px; font-size:13px; } #msg.ok { color:#5ddc8a; } #msg.err { color:#ff8a82; }
+  .muted { color:var(--muted); } .small { font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>shiftsim · deploy</h1>
+    <a href="index.html">← viewer</a>
+    <a href="docs.html#admin" target="_blank">about this page</a>
+    <button class="sec small" id="refresh" style="margin-left:auto;padding:5px 10px">↻ refresh</button>
+  </header>
+  <div class="warnbar">⚠ This page is <b>unauthenticated</b> — anyone who can reach it
+    can deploy or restart the service. Deploy is limited to the trusted
+    <span class="mono">main / stage / live</span> branches.</div>
+
+  <h2>Current version</h2>
+  <div class="card">
+    <div class="kv">
+      <div class="k">Running</div><div class="mono" id="running">…</div>
+      <div class="k">On disk</div><div class="mono" id="disk">…</div>
+      <div class="k">Tracking</div><div class="mono" id="track">…</div>
+      <div class="k">Status</div><div id="statusBadge">…</div>
+    </div>
+    <div class="actions">
+      <label class="small muted">deploy branch
+        <select id="branch"><option>live</option><option>stage</option><option>main</option></select></label>
+      <button id="deploy">Deploy now</button>
+      <button class="sec" id="restart">Restart service</button>
+    </div>
+    <div id="msg"></div>
+  </div>
+
+  <h2>Promotion pipeline</h2>
+  <div class="pipe" id="pipe">
+    <div class="tier" id="t-main"></div><div class="pill" id="g-ms"></div>
+    <div class="tier" id="t-stage"></div><div class="pill" id="g-sl"></div>
+    <div class="tier" id="t-live"></div>
+  </div>
+  <div class="small muted" style="margin-top:6px">Promotions run in CI
+    (<span class="mono">promote.yml</span>); this view is read-only.</div>
+
+  <h2>Promotion history</h2>
+  <div class="card" style="padding:6px 8px"><table id="promos"><tbody></tbody></table></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => { const d=document.createElement('div'); d.textContent = (s==null?'':String(s)); return d.innerHTML; };
+const API = '../api/admin';   // relative: works at /web/admin.html and /sim/web/admin.html
+const shortTime = iso => { try { return iso ? new Date(iso).toLocaleString() : ''; } catch(e){ return iso||''; } };
+
+async function getJSON(path){ const r = await fetch(path); const d = await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status)); return d; }
+
+function renderStatus(s){
+  const r = s.running || {};
+  const state = r.dirty ? '<span class="dirty">dirty</span>' : '<span class="clean">clean</span>';
+  $('running').innerHTML = `${esc(r.hostname)} · ${esc(r.branch)} @ ${esc(r.sha)} · ${state}`;
+  $('disk').innerHTML = esc(s.disk_sha) + (s.restart_needed ? ' <span class="dirty">(differs — restart needed)</span>' : '');
+  $('track').textContent = `${s.track}  ·  ${s.commits_behind} commit(s) behind  ·  service ${s.service_active?'active':'down'}`;
+  let badge;
+  if (s.restart_needed) badge = '<span class="badge warn">Restart needed</span>';
+  else if (s.commits_behind > 0) badge = `<span class="badge warn">${s.commits_behind} behind</span>`;
+  else if (!s.service_active) badge = '<span class="badge bad">Service down</span>';
+  else badge = '<span class="badge ok">Up to date</span>';
+  $('statusBadge').innerHTML = badge;
+}
+
+function renderTier(id, info){
+  const el = $(id), name = id.slice(2);
+  el.innerHTML = `<div class="name">${name}</div>
+    <div class="mono">${esc(info.short_sha)}</div>
+    <div class="msg" title="${esc(info.message)}">${esc(info.message)||'—'}</div>
+    <div class="small muted">${esc(shortTime(info.timestamp))}</div>`;
+}
+function renderGap(id, n){
+  const el = $(id);
+  if (n===0){ el.className='pill ok'; el.textContent='→ even'; }
+  else { el.className='pill '+(n>5?'bad':'warn'); el.textContent=`${n} ahead →`; }
+}
+function renderPipeline(p){
+  renderTier('t-main', p.branches.main); renderTier('t-stage', p.branches.stage); renderTier('t-live', p.branches.live);
+  renderGap('g-ms', p.gaps.main_ahead_of_stage); renderGap('g-sl', p.gaps.stage_ahead_of_live);
+}
+function renderPromos(d){
+  const rows = (d.promotions||[]).map(p =>
+    `<tr><td><span class="badge ${p.tier==='live'?'ok':'warn'}">${esc(p.tier)}</span></td>
+      <td class="mono">${esc(p.short_sha)}</td><td>${esc(p.message)}</td>
+      <td class="small muted">${esc(shortTime(p.timestamp))}</td></tr>`).join('');
+  $('promos').querySelector('tbody').innerHTML = rows ||
+    '<tr><td class="muted">No promotions yet.</td></tr>';
+}
+
+async function loadAll(){
+  try { renderStatus(await getJSON(API+'/status')); } catch(e){ msg('status: '+e.message, true); }
+  try { renderPipeline(await getJSON(API+'/pipeline')); } catch(e){ msg('pipeline: '+e.message, true); }
+  try { renderPromos(await getJSON(API+'/promotions')); } catch(e){ msg('promotions: '+e.message, true); }
+}
+function msg(t, err){ const m=$('msg'); m.textContent=t; m.className = err?'err':'ok'; }
+
+async function waitForService(targetSha){
+  // After a deploy/restart the service drops the connection; poll until it's back.
+  for (let i=0;i<20;i++){
+    await new Promise(r=>setTimeout(r,2000));
+    try { const s = await getJSON(API+'/status'); renderStatus(s);
+      if (s.service_active && (!targetSha || s.running.sha===targetSha)) { msg('Done — service back up.', false); return; }
+    } catch(e){ /* still restarting */ }
+  }
+  msg('Service did not report back in time — refresh to check.', true);
+}
+
+$('deploy').addEventListener('click', async ()=>{
+  const branch = $('branch').value;
+  if(!confirm(`Deploy origin/${branch} to this box and restart the service?`)) return;
+  setBusy(true); msg('Deploying origin/'+branch+'…', false);
+  try {
+    const r = await fetch(API+'/deploy', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({branch})});
+    const d = await r.json(); if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    msg(`Pulled ${d.from} → ${d.to} on ${d.branch}; restarting…`, false);
+    await waitForService(d.to);
+  } catch(e){ msg('Deploy failed: '+e.message, true); }
+  finally { setBusy(false); }
+});
+$('restart').addEventListener('click', async ()=>{
+  if(!confirm('Restart the shiftsim service now?')) return;
+  setBusy(true); msg('Restarting…', false);
+  try {
+    const r = await fetch(API+'/restart', {method:'POST'}); const d = await r.json();
+    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    await waitForService(null);
+  } catch(e){ msg('Restart failed: '+e.message, true); }
+  finally { setBusy(false); }
+});
+$('refresh').addEventListener('click', loadAll);
+function setBusy(b){ $('deploy').disabled=b; $('restart').disabled=b; }
+
+loadAll();
+</script>
+</body>
+</html>
