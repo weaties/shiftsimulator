@@ -297,6 +297,20 @@ puffs are seeded, and there's no wall-clock randomness — so the same setup alw
 produces the identical result, and any difference between boats is due to their
 configuration, not luck. That's what makes the A/B comparison trustworthy.</p>
 
+<h2 id="feedback">The footer: build version &amp; feedback</h2>
+<p>The bar at the bottom of the viewer shows the <b>running build</b> as
+<code>host · branch @ commit · clean/dirty</code> — read live from the server's
+git checkout. <b>dirty</b> means the deployed tree has uncommitted edits or sits
+ahead of its upstream; on a clean deploy it reads <b>clean</b>. Quote this when
+reporting a problem so we know exactly which version you saw.</p>
+<p>The <b>Report a bug</b> and <b>Request a feature</b> links open a pre-filled
+issue on the project's GitHub — you submit it there with your own GitHub account
+(nothing is sent through the simulator, and no credentials are stored on it). A
+<b>bug report automatically embeds the current scenario JSON</b>, so we can paste
+it back in and reproduce your exact run 1:1 — the whole point of the
+<a href="#determinism">deterministic</a> model. Tidy up the pre-filled
+description, add what you saw, and submit.</p>
+
 <p class="muted" style="margin-top:40px">This page is part of the project and is
 kept in sync with the model as it evolves. If a field here doesn't match what you
 see, the docs are the bug — file it.</p>

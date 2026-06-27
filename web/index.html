@@ -8,7 +8,8 @@
   :root { color-scheme: dark; --bg:#0b1a2b; --panel:#11151c; --line:#2a3340; --txt:#dde; --muted:#8aa; }
   html,body { height:100%; margin:0; }
   body { font-family: system-ui, sans-serif; color: var(--txt); background:#0d1117;
-         display:flex; height:100vh; overflow:hidden; font-size:13px; }
+         display:flex; flex-direction:column; height:100vh; overflow:hidden; font-size:13px; }
+  #main { display:flex; flex:1 1 auto; min-width:0; min-height:0; }
   .col { display:flex; flex-direction:column; min-height:0; }
   #controls { flex:0 0 320px; background:var(--panel); border-right:1px solid var(--line);
               overflow:auto; padding:12px; }
@@ -58,9 +59,17 @@
   h2 .help { border-color:#1f6feb; color:#58a6ff; }
   #docsLink { color:#58a6ff; text-decoration:none; font-size:12px; }
   label span { display:inline-flex; align-items:center; }
+  #foot { flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:6px;
+          padding:5px 10px; font-size:11px; color:var(--muted);
+          background:var(--panel); border-top:1px solid var(--line); }
+  #foot a { color:var(--muted); text-decoration:none; }
+  #foot a:hover { color:#58a6ff; text-decoration:underline; }
+  #foot .sep { opacity:.45; }
+  #foot .dirty { color:#f5a; }
 </style>
 </head>
 <body>
+<div id="main">
 <!-- ================= CONTROLS ================= -->
 <div id="controls" class="col">
   <div style="margin-bottom:8px"><a id="docsLink" href="docs.html" target="_blank">📖 How this works &amp; what each field means →</a></div>
@@ -128,6 +137,16 @@
     jump there; the current one is highlighted as you play.</div>
   <div id="mlog" class="mlog"></div>
 </div>
+</div><!-- /#main -->
+
+<!-- ================= FOOTER: build stamp + feedback ================= -->
+<footer id="foot">
+  <span id="ver" data-help="feedback">connecting…</span>
+  <span class="sep">·</span>
+  <a href="#" id="reportBug">Report a bug</a>
+  <span class="sep">·</span>
+  <a href="#" id="reportFeature">Request a feature</a>
+</footer>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -177,6 +196,7 @@ const HELP = {
   'boat-speed': {a:'boat-speed', t:'Top boat speed in strong breeze; scales the whole polar.'},
   'ladder': {a:'ladder', t:'Rungs perpendicular to the wind = equal progress up the course.'},
   'decision-pipeline': {a:'decision-pipeline', t:'How each tack/gybe is decided, with the calculation.'},
+  'feedback': {a:'feedback', t:'The running build (host · branch @ commit · clean/dirty), and links to report a bug or request a feature on GitHub.'},
 };
 function decorate(root){
   root.querySelectorAll('[data-help]').forEach(el => {
@@ -461,8 +481,55 @@ function tick(){
   requestAnimationFrame(tick);
 }
 
+// ---------- footer: build stamp + feedback links ----------
+const REPO_URL = 'https://github.com/weaties/shiftsimulator';
+let buildVer = null;
+function esc(s){ const d=document.createElement('div'); d.textContent=String(s); return d.innerHTML; }
+async function loadVersion(){
+  try {
+    // relative path: works at /web/ and behind the /sim/ proxy at /sim/web/
+    const v = await (await fetch('../api/version')).json();
+    buildVer = v;
+    const state = v.dirty ? '<span class="dirty">dirty</span>' : 'clean';
+    $('ver').innerHTML = `${esc(v.hostname)} · ${esc(v.branch)} @ ${esc(v.sha)} · ${state}`;
+  } catch(e){ $('ver').textContent = 'version unavailable'; }
+}
+// Deep-link to GitHub's pre-filled issue form (no server token — the user files
+// it via their own GitHub login). Bug reports embed the current scenario JSON so
+// every report reproduces the run 1:1.
+function buildIssueUrl(kind){
+  const v = buildVer || {};
+  const branch = v.branch || 'unknown', rev = v.sha || 'unknown', host = v.hostname || 'unknown';
+  const ver = `${branch} @ ${rev}${v.dirty?' (dirty)':''} on ${host}`;
+  const meta = `\n\n---\n| | |\n|---|---|\n`
+    + `| Page | ${location.pathname}${location.search} |\n`
+    + `| Build | ${ver} |\n`
+    + `| Browser | ${navigator.userAgent} |\n`
+    + `| Screen | ${screen.width}×${screen.height} |\n`
+    + `| When | ${new Date().toISOString()} |\n`;
+  let title, body, labels;
+  if (kind === 'bug'){
+    const cfg = JSON.stringify(buildConfig(), null, 2);
+    title = '[bug] ';
+    body = `## What happened\n\n\n## What I expected\n\n\n## Steps to reproduce\n\n1. \n`
+      + meta
+      + `\n### Scenario (paste-runs this exact case)\n\n` + '```json\n' + cfg + '\n```\n';
+    labels = 'from-app,bug';
+  } else {
+    title = '[feature] ';
+    body = `## What I'd like\n\n\n## Why — the use case\n\n\n` + meta;
+    labels = 'from-app,enhancement';
+  }
+  return REPO_URL + '/issues/new'
+    + '?title=' + encodeURIComponent(title)
+    + '&body=' + encodeURIComponent(body)
+    + '&labels=' + encodeURIComponent(labels);
+}
+$('reportBug').addEventListener('click', e=>{ e.preventDefault(); window.open(buildIssueUrl('bug'),'_blank'); });
+$('reportFeature').addEventListener('click', e=>{ e.preventDefault(); window.open(buildIssueUrl('feature'),'_blank'); });
+
 // auto-run on load so there's something to see
-window.addEventListener('load', ()=>{ decorate(document); resize(); run(); });
+window.addEventListener('load', ()=>{ decorate(document); resize(); run(); loadVersion(); });
 </script>
 </body>
 </html>

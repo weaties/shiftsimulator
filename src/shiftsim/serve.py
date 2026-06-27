@@ -13,8 +13,11 @@ and the CLI always agree, and there's still nothing to install. Run it with:
 
 from __future__ import annotations
 
+import contextlib
 import json
-from functools import partial
+import socket
+import subprocess
+from functools import lru_cache, partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -36,6 +39,43 @@ LIMITS = {
     # Reasonable runs are far under (3 boats × 3000s/0.5 ≈ 18k);
     # this only catches pathological many-boats × long × fine-dt combos.
 }
+
+
+@lru_cache(maxsize=8)
+def version_info(directory: str) -> dict:
+    """Return the running build as ``{hostname, branch, sha, dirty}``.
+
+    Read from git on ``directory`` (the served repo). Invoked with
+    ``safe.directory`` + ``--no-optional-locks`` so it works under the deployed
+    service's sandbox (``ReadOnlyPaths=/opt/shiftsim``) and on a **root-owned**
+    checkout served by the unprivileged ``shiftsim`` user — git would otherwise
+    refuse with "dubious ownership". A tree with uncommitted changes *or* commits
+    ahead of its upstream reads as ``dirty`` (a hand-edited / un-deployed box).
+
+    Any failure (not a checkout, no git, timeout) degrades to ``"unknown"``
+    rather than raising: the ``/api/version`` endpoint must never 500 the viewer.
+    Cached so git runs once per directory in the long-lived server.
+    """
+    hostname = socket.gethostname()
+    base = ["git", "-C", directory, "-c", f"safe.directory={directory}", "--no-optional-locks"]
+
+    def _git(*args: str) -> str:
+        out = subprocess.run(
+            base + list(args), capture_output=True, text=True, timeout=5, check=True
+        )
+        return out.stdout.strip()
+
+    try:
+        branch = _git("rev-parse", "--abbrev-ref", "HEAD") or "unknown"
+        sha = _git("rev-parse", "--short", "HEAD") or "unknown"
+        dirty = bool(_git("status", "--porcelain"))
+        if not dirty:
+            # No upstream tracked (e.g. a detached deploy) — treat as clean.
+            with contextlib.suppress(Exception):
+                dirty = int(_git("rev-list", "@{upstream}..HEAD", "--count")) > 0
+    except Exception:  # noqa: BLE001 — not a checkout / no git / timeout
+        return {"hostname": hostname, "branch": "unknown", "sha": "unknown", "dirty": False}
+    return {"hostname": hostname, "branch": branch, "sha": sha, "dirty": dirty}
 
 
 class RequestTooLarge(ValueError):
@@ -86,10 +126,15 @@ class Handler(SimpleHTTPRequestHandler):
         # Send the bare root to the viewer. A *relative* redirect so it works
         # both at the host root (-> /web/) and behind a proxy subpath that
         # strips its prefix (e.g. /sim/ -> app / -> browser /sim/web/).
-        if urlparse(self.path).path in ("", "/"):
+        path = urlparse(self.path).path
+        if path in ("", "/"):
             self.send_response(302)
             self.send_header("Location", "web/")
             self.end_headers()
+            return
+        # The build stamp shown in the viewer footer (and used to tag bug reports).
+        if path == "/api/version":
+            self._send_json(200, version_info(self.directory))
             return
         super().do_GET()
 
