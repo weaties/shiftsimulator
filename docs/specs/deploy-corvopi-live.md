@@ -187,9 +187,10 @@ Tunnel with HTTPS, same as helmlog — never a raw port-forward.
 - **Phase 1 (this feature):** service + nginx + `setup.sh` + `deploy.sh` + input
   caps. Reachable at `http://corvopi-live/` on the LAN and over Tailscale. Done
   when a crew member on the tailnet can open it and run a comparison.
-- **Phase 2 (follow-up issues):** `promote.yml` + `stage`/`live` branches for
-  gated releases; public HTTPS via Tailscale Funnel or Cloudflare Tunnel;
-  a `RELEASES.md`-gated promotion like helmlog.
+- **Phase 2:** `promote.yml` + `stage`/`live` branches for gated releases,
+  with a `RELEASES.md`-gated `main → stage` promotion like helmlog — **done**
+  (`.github/workflows/promote.yml`). Still open: public HTTPS via Tailscale
+  Funnel or Cloudflare Tunnel.
 
 ## Verification / test plan
 
