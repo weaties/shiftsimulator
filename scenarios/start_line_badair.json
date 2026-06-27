@@ -1,0 +1,48 @@
+{
+  "name": "Start line: hold your lane vs. tack for clear air",
+  "description": "A start-line situation. Three boats line up; 'Pinned (gassed)' starts two boat-lengths dead downwind of 'Leeward bow' and sits in its bad air. 'Clear-air' starts level but tacks onto port to escape the dirt. Steady 10kn from the north so the only thing separating the boats is the wind shadow. Compare the gassed boat's finish (and its % in bad air) against the boat that tacked out.",
+  "ref_twd": 0,
+  "wind": { "type": "steady", "twd": 0, "tws": 10 },
+  "course": { "type": "windward_leeward", "beat_length": 900, "laps": 1, "line_length": 120 },
+  "run": {
+    "dt": 0.5,
+    "max_time": 2400,
+    "sample_every": 4,
+    "badair_enabled": true,
+    "badair_length": 8,
+    "badair_half_angle": 12,
+    "badair_max_loss": 0.4
+  },
+  "boats": [
+    {
+      "name": "Leeward bow",
+      "color": "#2ca02c",
+      "initial_tack": "starboard",
+      "length": 6.5,
+      "beam": 2.4,
+      "start": { "line_pos": 0.45, "behind": 0 },
+      "strategy": { "name": "minimize_tacks" },
+      "polar": { "type": "synthetic", "max_speed": 7.5, "pointing": 1.1 }
+    },
+    {
+      "name": "Pinned (gassed)",
+      "color": "#d62728",
+      "initial_tack": "starboard",
+      "length": 6.5,
+      "beam": 2.4,
+      "start": { "line_pos": 0.45, "behind": 26 },
+      "strategy": { "name": "minimize_tacks" },
+      "polar": { "type": "synthetic", "max_speed": 7.5, "pointing": 1.1 }
+    },
+    {
+      "name": "Clear-air (tacks out)",
+      "color": "#1f77b4",
+      "initial_tack": "port",
+      "length": 6.5,
+      "beam": 2.4,
+      "start": { "line_pos": 0.55, "behind": 26 },
+      "strategy": { "name": "minimize_tacks" },
+      "polar": { "type": "synthetic", "max_speed": 7.5, "pointing": 1.1 }
+    }
+  ]
+}
