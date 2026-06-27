@@ -101,6 +101,16 @@
   <label><span data-help="laps">laps</span><input id="c_laps" type="number" value="1" min="1"></label>
   <label><span data-help="max-time">max time (s)</span><input id="r_max" type="number" value="3000" step="100"></label>
 
+  <h2 data-help="sec-start">Start line &amp; bad air</h2>
+  <label><span data-help="start-line">start line (m)</span><input id="c_line" type="number" value="0" step="20" min="0"></label>
+  <label><span data-help="badair">model bad air</span><input id="ba_on" type="checkbox" class="chk"></label>
+  <div id="baParams">
+    <label><span data-help="badair-reach">reach (lengths)</span><input id="ba_len" type="number" value="8" step="1"></label>
+    <label><span data-help="badair-angle">cone angle (°)</span><input id="ba_ang" type="number" value="12" step="1"></label>
+    <label><span data-help="badair-loss">max loss</span><input id="ba_loss" type="number" value="0.4" step="0.05"></label>
+  </div>
+  <div class="hint">Give the line a length and place each boat (line pos / rows back) to set up a start. Bad air: a boat in another's wind shadow sails slower.</div>
+
   <h2 data-help="sec-boats">Boats <button class="sec" id="addBoat" style="float:right;padding:2px 8px">+ add</button></h2>
   <div id="boats"></div>
 
@@ -185,6 +195,16 @@ const HELP = {
   'beat-length': {a:'beat-length', t:'Distance from start to the windward mark, in metres.'},
   'laps': {a:'laps', t:'Number of windward-leeward laps.'},
   'max-time': {a:'max-time', t:'Simulation cutoff; a boat not finished by here is DNF.'},
+  'sec-start': {a:'start-line', t:'Lay a start line and place boats on it; model the bad air boats cast.'},
+  'start-line': {a:'start-line', t:'Length of the start line (square to the wind). 0 = single-point start at the origin.'},
+  'line-pos': {a:'line-pos', t:'Where on the line this boat starts: 0 = pin end, 1 = committee end.'},
+  'rows-back': {a:'rows-back', t:'How far to leeward (downwind, behind the line) this boat sits, in metres.'},
+  'boat-length': {a:'boat-length', t:'Boat length overall; sets the wind-shadow reach and the drawn size.'},
+  'boat-beam': {a:'boat-beam', t:'Boat max beam; its drawn footprint.'},
+  'badair': {a:'bad-air', t:'Model the dirty air boats cast to leeward — a boat in it sails slower.'},
+  'badair-reach': {a:'bad-air', t:'How far downwind the shadow reaches, in boat lengths (8 ≈ classic).'},
+  'badair-angle': {a:'bad-air', t:'Half-angle of the shadow cone, in degrees.'},
+  'badair-loss': {a:'bad-air', t:'Deepest wind loss at the transom (0.4 = up to 40% of the wind gone).'},
   'sec-boats': {a:'strategies', t:'The fleet: each boat\'s strategy, tack cost and speed.'},
   'strategy': {a:'strategies', t:'The tactic deciding WHEN this boat tacks/gybes.'},
   'threshold': {a:'threshold', t:'Degrees of header (wind shift against you) before tacking.'},
@@ -234,7 +254,15 @@ function boatCard(preset) {
       <label style="flex:1"><span data-help="tack-time">tack time (s)</span><input type="number" data-f="maneuver_time" value="${preset.mtime??12}" style="width:60px"></label>
       <label style="flex:1"><span data-help="recover-speed">recover speed×</span><input type="number" step="0.05" data-f="maneuver_speed_factor" value="${preset.msf??0.45}" style="width:60px"></label>
     </div>
-    <label><span data-help="boat-speed">boat speed (kn)</span><input type="number" step="0.5" data-f="max_speed" value="${preset.max_speed??7.5}"></label>`;
+    <label><span data-help="boat-speed">boat speed (kn)</span><input type="number" step="0.5" data-f="max_speed" value="${preset.max_speed??7.5}"></label>
+    <div class="row">
+      <label style="flex:1"><span data-help="boat-length">length (m)</span><input type="number" step="0.5" data-f="length" value="${preset.length??6}" style="width:60px"></label>
+      <label style="flex:1"><span data-help="boat-beam">beam (m)</span><input type="number" step="0.1" data-f="beam" value="${preset.beam??2}" style="width:60px"></label>
+    </div>
+    <div class="row">
+      <label style="flex:1"><span data-help="line-pos">line pos</span><input type="number" step="0.05" min="0" max="1" data-f="line_pos" value="${preset.line_pos??0.5}" style="width:60px"></label>
+      <label style="flex:1"><span data-help="rows-back">rows back (m)</span><input type="number" step="5" data-f="behind" value="${preset.behind??0}" style="width:60px"></label>
+    </div>`;
   $('boats').appendChild(div);
   const sel = div.querySelector('[data-f=strategy]');
   const renderParams = () => {
@@ -261,6 +289,8 @@ function readBoats() {
       name: g('name'), color: g('color'), initial_tack: g('initial_tack'),
       maneuver_time: parseFloat(g('maneuver_time')),
       maneuver_speed_factor: parseFloat(g('maneuver_speed_factor')),
+      length: parseFloat(g('length')), beam: parseFloat(g('beam')),
+      start: {line_pos: parseFloat(g('line_pos')), behind: parseFloat(g('behind'))},
       strategy: strat,
       polar: {type:'synthetic', max_speed: parseFloat(g('max_speed')), pointing: 1.1},
     };
@@ -297,13 +327,20 @@ function windDict(){
   return {type:'steady', twd:+$('w_sdir').value, tws};
 }
 function buildConfig(){
+  const baOn = $('ba_on').checked;
   return {
     name:'interactive', ref_twd:refTwd(), wind:windDict(),
-    course:{type:'windward_leeward', beat_length:+$('c_beat').value, laps:+$('c_laps').value},
-    run:{dt:0.5, max_time:+$('r_max').value, sample_every:4},
+    course:{type:'windward_leeward', beat_length:+$('c_beat').value, laps:+$('c_laps').value,
+            line_length:+$('c_line').value},
+    run:{dt:0.5, max_time:+$('r_max').value, sample_every:4,
+         badair_enabled:baOn, badair_length:+$('ba_len').value,
+         badair_half_angle:+$('ba_ang').value, badair_max_loss:+$('ba_loss').value},
     boats: readBoats(),
   };
 }
+// show the bad-air tunables only when it's enabled
+function syncBadair(){ $('baParams').style.display = $('ba_on').checked ? '' : 'none'; }
+$('ba_on').addEventListener('change', syncBadair); syncBadair();
 
 // ---------- run ----------
 async function run(){
@@ -334,12 +371,14 @@ function load(d){
 }
 
 function renderResults(){
+  const ba = data.badair && data.badair.enabled;
   const rows = data.results.map((r,i)=>
     `<tr class="boatrow ${i===selBoat?'sel':''}" data-bi="${i}">
        <td><span class="sw" style="background:${r.color}"></span>${r.name}</td>
        <td>${r.finished?r.finish_time.toFixed(0)+'s':'DNF'}</td>
-       <td>${r.n_tacks}/${r.n_gybes}</td></tr>`).join('');
-  $('results').innerHTML = `<table><tr><th>boat</th><th>finish</th><th>t/g</th></tr>${rows}</table>`;
+       <td>${r.n_tacks}/${r.n_gybes}</td>
+       ${ba?`<td>${Math.round((r.pct_time_in_badair||0)*100)}%</td>`:''}</tr>`).join('');
+  $('results').innerHTML = `<table><tr><th>boat</th><th>finish</th><th>t/g</th>${ba?'<th>dirt</th>':''}</tr>${rows}</table>`;
   document.querySelectorAll('.boatrow').forEach(tr=>tr.addEventListener('click',()=>{selBoat=+tr.dataset.bi; renderResults(); renderMlog(); draw();}));
 }
 
@@ -398,7 +437,11 @@ function draw(){
     ctx.fillStyle='#9fb'; ctx.font=`${12*devicePixelRatio}px sans-serif`;
     ctx.fillText(m.name, W.X(m.pos[0])+9*devicePixelRatio, W.Y(m.pos[1]));
   }
+  drawStartLine(W);
   drawWind(W, twd, f0?f0.tws:10);
+  // bad-air shadow cones (drawn under the boats so the boats sit on top)
+  if(data.badair && data.badair.enabled)
+    data.boats.forEach(b=>{ const p=b.frames[Math.min(frame,b.frames.length-1)]; drawShadow(W,b,p,twd); });
   // boats + tracks
   data.boats.forEach((b,bi)=>{
     const fi=Math.min(frame,b.frames.length-1);
@@ -407,16 +450,55 @@ function draw(){
     for(let i=0;i<=fi;i++){const p=b.frames[i];(i?ctx.lineTo:ctx.moveTo).call(ctx,W.X(p.x),W.Y(p.y));}
     ctx.stroke(); ctx.globalAlpha=1;
     const p=b.frames[fi];
-    drawBoat(W.X(p.x),W.Y(p.y),p.hdg,b.color,p.man,bi===selBoat);
+    drawBoat(W.X(p.x),W.Y(p.y),p.hdg,b.color,p.man,bi===selBoat,(b.length||6)*W.s,p.mult==null?1:p.mult);
   });
   drawGauge(twd);
   $('clock').textContent=(f0?f0.t:0).toFixed(0)+'s'; $('seek').value=frame;
 }
-function drawBoat(x,y,hdg,color,man,sel){
-  const r=(sel?9:7)*devicePixelRatio, a=(hdg-90)*Math.PI/180;
+// the start line: committee (square) + pin (round) ends joined by a dashed line
+function drawStartLine(W){
+  const sl = data.course.start_line; if(!sl) return;
+  const cx=W.X(sl.committee[0]), cy=W.Y(sl.committee[1]), px=W.X(sl.pin[0]), py=W.Y(sl.pin[1]);
+  ctx.save();
+  ctx.strokeStyle='#cdd6e0aa'; ctx.lineWidth=1.4*devicePixelRatio; ctx.setLineDash([6*devicePixelRatio,5*devicePixelRatio]);
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(px,py); ctx.stroke(); ctx.setLineDash([]);
+  const r=4.5*devicePixelRatio;
+  ctx.fillStyle='#dce3ea'; ctx.fillRect(cx-r,cy-r,2*r,2*r);            // committee boat
+  ctx.beginPath(); ctx.arc(px,py,r,0,7); ctx.fillStyle='#ff7043'; ctx.fill();  // pin buoy
+  ctx.restore();
+}
+// a boat's downwind dirty-air cone, sized in metres from the shared model params
+function drawShadow(W,b,p,twd){
+  const reach=(b.length||6)*data.badair.length;                       // metres downwind
+  const halfFar=0.5*(b.length||6)+reach*Math.tan(data.badair.half_angle*Math.PI/180);
+  const halfNear=0.5*(b.length||6);
+  const dwd=twd+180, dx=Math.sin(dwd*Math.PI/180), dy=Math.cos(dwd*Math.PI/180);  // downwind unit (E,N)
+  const ex=-dy, ey=dx;                                                // perpendicular (a rung direction)
+  const W2=(qx,qy)=>[W.X(p.x+qx), W.Y(p.y+qy)];
+  const n1=W2(ex*halfNear, ey*halfNear), n2=W2(-ex*halfNear, -ey*halfNear);
+  const f1=W2(dx*reach+ex*halfFar, dy*reach+ey*halfFar), f2=W2(dx*reach-ex*halfFar, dy*reach-ey*halfFar);
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(n1[0],n1[1]); ctx.lineTo(f1[0],f1[1]); ctx.lineTo(f2[0],f2[1]); ctx.lineTo(n2[0],n2[1]); ctx.closePath();
+  ctx.fillStyle=hexA(b.color,0.12); ctx.fill();
+  ctx.strokeStyle=hexA(b.color,0.22); ctx.lineWidth=1*devicePixelRatio; ctx.stroke();
+  ctx.restore();
+}
+// hex (#rrggbb) -> rgba string at alpha a
+function hexA(hex,a){ const h=hex.replace('#',''); const n=parseInt(h.length===3?h.replace(/(.)/g,'$1$1'):h,16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+// blend two #rrggbb colors by t in [0,1]
+function mix(c1,c2,t){ const a=parseInt(c1.slice(1),16), b=parseInt(c2.slice(1),16);
+  const r=x=>x&255, g=x=>(x>>8)&255, bl=x=>(x>>16)&255;
+  const L=(u,v)=>Math.round(u+(v-u)*t);
+  return `rgb(${L(bl(a),bl(b))},${L(g(a),g(b))},${L(r(a),r(b))})`; }
+function drawBoat(x,y,hdg,color,man,sel,lenpx,mult){
+  // glyph scaled by boat length (clamped so it stays visible/usable on screen)
+  const r=Math.max((sel?9:7), Math.min(22, (lenpx||14)*0.6))*devicePixelRatio, a=(hdg-90)*Math.PI/180;
+  // tint toward red the more gassed the boat is (mult<1 = in bad air)
+  const base = (mult!=null && mult<0.98) ? mix(color,'#ff3b30', Math.min(1,(1-mult)/0.4)) : color;
   ctx.save(); ctx.translate(x,y); ctx.rotate(a);
   ctx.beginPath(); ctx.moveTo(r,0); ctx.lineTo(-r*.7,r*.6); ctx.lineTo(-r*.7,-r*.6); ctx.closePath();
-  ctx.fillStyle=man?'#ffd54f':color; ctx.fill();
+  ctx.fillStyle=man?'#ffd54f':base; ctx.fill();
   ctx.lineWidth=(sel?2:1)*devicePixelRatio; ctx.strokeStyle=sel?'#fff':'#0008'; ctx.stroke(); ctx.restore();
 }
 function drawWind(W,twd,tws){

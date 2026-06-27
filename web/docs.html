@@ -59,6 +59,8 @@ wind so you can see — and measure — which choices win, and why.
   <a href="#maneuvers">Maneuvers &amp; their cost</a><br/>
   <a href="#strategies">Strategies (when to tack)</a><br/>
   <a href="#decision-pipeline">How a boat decides each step</a><br/>
+  <a href="#start-line">Start-line situations</a><br/>
+  <a href="#bad-air">Bad air (wind shadow)</a><br/>
   <a href="#ladder">Ladder rungs &amp; the gauge</a><br/>
   <a href="#metrics">Reading the results</a><br/>
   <a href="#determinism">Reproducibility</a></p>
@@ -76,7 +78,9 @@ wind so you can see — and measure — which choices win, and why.
 <p>All boats see the <b>same</b> wind, so the comparison is fair. Nothing is
 random unless you choose a <a href="#wind">puffy</a> wind, and even that is
 <a href="#determinism">seeded</a>. There is no boat-on-boat contact or
-right-of-way — this is a tactics sandbox, not a fleet-racing sim.</p>
+right-of-way — this is a tactics sandbox, not a fleet-racing sim. The one way
+boats <i>do</i> affect each other is <a href="#bad-air">bad air</a> (a boat's
+wind shadow), which is opt-in and off by default.</p>
 
 <h2 id="conventions">Directions &amp; angles</h2>
 <ul>
@@ -261,6 +265,47 @@ fighting the safety net (a pathological strategy). It gets flagged "struggling"
 (shown as <code>struggled</code> in the results) and is sailed on laylines until
 the next mark — so even a bad rule finishes, it just finishes last.
 </div>
+
+<h2 id="start-line">Start-line situations</h2>
+<p>Instead of stacking every boat on top of each other at the origin, you can lay
+a <b>start line</b> across the start and place named boats along it — then run it
+and compare <i>alternative reactions</i> to the same situation (e.g. hold your
+lane vs. tack out for clear air). Turn it on by giving the line a length; set it
+to <code>0</code> for the classic single-point start.</p>
+<table>
+<tr><th>Field</th><th>What it controls</th></tr>
+<tr><td class="field" id="start-line">start line (m)</td><td>Length of the start line, laid square to the wind across the start (committee-boat end to the right looking upwind, pin to the left). <code>0</code> = no line; every boat starts at the origin as before.</td></tr>
+<tr><td class="field" id="line-pos">line pos</td><td>Where on the line this boat starts, as a fraction from the <b>pin (0)</b> to the <b>committee (1)</b> end. <code>0.5</code> is the middle.</td></tr>
+<tr><td class="field" id="rows-back">rows back (m)</td><td>How far <b>to leeward</b> (downwind, behind the line) this boat sits, in metres. A boat parked directly downwind of another starts in its <a href="#bad-air">bad air</a>.</td></tr>
+<tr><td class="field" id="boat-length">length (m)</td><td>The boat's length overall. It sets how far the boat's <a href="#bad-air">wind shadow</a> reaches and how big the boat is drawn.</td></tr>
+<tr><td class="field" id="boat-beam">beam (m)</td><td>The boat's maximum width — its drawn footprint (and the close-in width of its shadow).</td></tr>
+</table>
+<p class="muted">A start-line situation is still just a <a href="#determinism">scenario</a>:
+the line, each boat's placement, and the bad-air settings all live in the JSON,
+so it reproduces 1:1 and can be shared or filed with a bug report.</p>
+
+<h2 id="bad-air">Bad air (wind shadow)</h2>
+<p>A boat disturbs the air <b>to leeward and astern</b> of it: a wedge of "dirty
+air" blown downwind that robs the boats behind of wind. Switch <span class="field">model bad air</span>
+on (a start-line feature) and each boat casts a shadow cone pointing straight
+downwind; a boat inside it sees <b>less wind and so sails slower</b> — which is
+why you tack to clear your air. The cone is drawn translucent on the course, and
+a gassed boat is tinted toward red.</p>
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td class="field" id="bad-air">model bad air</td><td>Turn the wind-shadow interaction on. Off by default; with it off, boats never affect each other.</td></tr>
+<tr><td class="field">reach (lengths)</td><td>How far downwind the shadow extends, in <a href="#boat-length">boat lengths</a>. <code>8</code> ≈ the classic "few boat-lengths of dirty air".</td></tr>
+<tr><td class="field">cone angle (°)</td><td>The half-angle of the shadow wedge. Wider = the dirty air spreads to the side more.</td></tr>
+<tr><td class="field">max loss</td><td>The deepest wind loss, right at a boat's transom — <code>0.4</code> = up to 40% of the wind gone. It falls off to zero with distance and toward the cone's edges.</td></tr>
+</table>
+<div class="note"><b>What the model does and doesn't do.</b> It models the
+<i>velocity</i> deficit only — less wind, less speed — using the <b>true-wind</b>
+downwind direction, so it stays <a href="#determinism">deterministic</a>. It does
+<i>not</i> bend the wind direction (the lee-bow effect) or model contact/rules.
+Combined shadows from several boats stack but are capped, so a boat is never
+fully becalmed — a movement safety net, like the <a href="#decision-pipeline">layline
+smoothing</a>. The <b>% in bad air</b> result is the share of the beat a boat
+spent gassed — the "why" behind a start-line loss.</div>
 
 <h2 id="ladder">Ladder rungs &amp; the gauge</h2>
 <p><b>Ladder rungs</b> are imaginary lines drawn <b>perpendicular to the wind</b>.
