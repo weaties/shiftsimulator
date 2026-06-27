@@ -21,6 +21,7 @@ from functools import lru_cache, partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
+from . import admin
 from .report import replay_data
 from .scenario import Scenario
 
@@ -136,12 +137,35 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/version":
             self._send_json(200, version_info(self.directory))
             return
+        # Read-only deployment views for web/admin.html.
+        if path == "/api/admin/status":
+            self._admin_get(admin.status)
+            return
+        if path == "/api/admin/pipeline":
+            self._admin_get(admin.pipeline)
+            return
+        if path == "/api/admin/promotions":
+            self._admin_get(admin.promotions)
+            return
         super().do_GET()
 
     def do_POST(self) -> None:  # noqa: N802
-        if urlparse(self.path).path != "/api/simulate":
-            self.send_error(404)
+        path = urlparse(self.path).path
+        if path == "/api/simulate":
+            self._simulate()
             return
+        # Deployment actions for web/admin.html. UNAUTHENTICATED by design (see
+        # admin.py / docs/specs/admin-page.md); bounded by the trusted-branch
+        # allowlist and the single-flight lock inside admin.deploy.
+        if path == "/api/admin/deploy":
+            self._admin_deploy()
+            return
+        if path == "/api/admin/restart":
+            self._admin_action(admin.restart)
+            return
+        self.send_error(404)
+
+    def _simulate(self) -> None:
         try:
             length = int(self.headers.get("Content-Length", 0))
             if length > MAX_BODY:
@@ -157,11 +181,38 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001  (report any config error to the UI)
             self._send_json(400, {"error": f"{type(e).__name__}: {e}"})
 
+    def _admin_get(self, fn: object) -> None:
+        try:
+            self._send_json(200, fn(self.directory))  # type: ignore[operator]
+        except Exception as e:  # noqa: BLE001 — report read failures to the page
+            self._send_json(500, {"error": f"{type(e).__name__}: {e}"})
+
+    def _admin_deploy(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length) if 0 < length <= MAX_BODY else b""
+            branch = (json.loads(body or b"{}") or {}).get("branch", admin.TRACK_DEFAULT)
+            self._send_json(200, admin.deploy(self.directory, branch))
+        except admin.AdminError as e:
+            code = 409 if "in progress" in str(e) else 400
+            self._send_json(code, {"error": str(e)})
+        except Exception as e:  # noqa: BLE001
+            self._send_json(500, {"error": f"{type(e).__name__}: {e}"})
+
+    def _admin_action(self, fn: object) -> None:
+        try:
+            self._send_json(200, fn())  # type: ignore[operator]
+        except admin.AdminError as e:
+            self._send_json(400, {"error": str(e)})
+        except Exception as e:  # noqa: BLE001
+            self._send_json(500, {"error": f"{type(e).__name__}: {e}"})
+
     def log_message(self, *args: object) -> None:  # quieter console
         pass
 
 
 def serve(directory: str, port: int = 8000) -> None:
+    admin.record_startup(directory)  # snapshot the deployed SHA for "restart needed"
     handler = partial(Handler, directory=directory)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
     print(f"shiftsim serving {directory} at http://localhost:{port}/web/")
