@@ -102,7 +102,7 @@
   <label><span data-help="max-time">max time (s)</span><input id="r_max" type="number" value="3000" step="100"></label>
 
   <h2 data-help="sec-start">Start line &amp; bad air</h2>
-  <label><span data-help="start-line">start line (m)</span><input id="c_line" type="number" value="0" step="20" min="0"></label>
+  <label><span data-help="start-line">start line (m)</span><input id="c_line" type="number" value="100" step="20" min="0"></label>
   <label><span data-help="badair">model bad air</span><input id="ba_on" type="checkbox" class="chk"></label>
   <div id="baParams">
     <label><span data-help="badair-reach">reach (lengths)</span><input id="ba_len" type="number" value="8" step="1"></label>
@@ -131,6 +131,11 @@
     <label style="margin:0"><span>speed</span>
       <select id="speed" style="width:55px"><option>1</option><option selected>4</option><option>8</option><option>16</option></select></label>
     <label style="margin:0" title="rotating ladder rungs"><input type="checkbox" id="showLadder" class="chk" checked> rungs</label>
+    <span style="display:flex;gap:4px;margin-left:auto" title="zoom the map (or scroll on it)">
+      <button id="zout" class="sec" style="padding:2px 9px">−</button>
+      <button id="zin" class="sec" style="padding:2px 9px">+</button>
+      <button id="zfit" class="sec" style="padding:2px 9px">fit</button>
+    </span>
   </div>
 </div>
 
@@ -275,7 +280,11 @@ function boatCard(preset) {
     decorate(wrap);
   };
   sel.addEventListener('change', renderParams); renderParams();
-  div.querySelector('.rm').addEventListener('click', ()=>div.remove());
+  div.querySelector('.rm').addEventListener('click', ()=>{ div.remove(); rebuildSetup(); draw(); });
+  // typing a line pos / rows back moves just this boat's start marker
+  const boatIndex = () => [...document.querySelectorAll('.boat')].indexOf(div);
+  ['line_pos','behind'].forEach(f => div.querySelector(`[data-f=${f}]`)
+    .addEventListener('change', ()=>{ placeBoatFromFields(boatIndex()); draw(); }));
   decorate(div);
   return div;
 }
@@ -297,12 +306,12 @@ function readBoats() {
   });
 }
 
-// default fleet
-[{name:'Half-header', strategy:'tack_at_half_header', tack:'starboard', color:'#ff7f0e', params:{amplitude:12,fraction:0.5}},
- {name:'Tack on header', strategy:'tack_on_header', tack:'starboard', color:'#1f77b4', params:{threshold:8}},
- {name:'One-tack', strategy:'minimize_tacks', tack:'starboard', color:'#2ca02c'}
+// default fleet (spread along the start line so there's something to drag)
+[{name:'Half-header', strategy:'tack_at_half_header', tack:'starboard', color:'#ff7f0e', params:{amplitude:12,fraction:0.5}, line_pos:0.3},
+ {name:'Tack on header', strategy:'tack_on_header', tack:'starboard', color:'#1f77b4', params:{threshold:8}, line_pos:0.5},
+ {name:'One-tack', strategy:'minimize_tacks', tack:'starboard', color:'#2ca02c', line_pos:0.7}
 ].forEach(boatCard);
-$('addBoat').addEventListener('click', ()=>boatCard({name:'Boat '+(boatSeq+1), strategy:'tack_on_header', tack:'starboard', params:{threshold:8}}));
+$('addBoat').addEventListener('click', ()=>{ boatCard({name:'Boat '+(boatSeq+1), strategy:'tack_on_header', tack:'starboard', params:{threshold:8}, line_pos:0.5}); rebuildSetup(); draw(); });
 
 // ---------- wind field visibility ----------
 function syncWind(){
@@ -328,19 +337,79 @@ function windDict(){
 }
 function buildConfig(){
   const baOn = $('ba_on').checked;
+  const lineLen = +$('c_line').value;
+  const boats = readBoats();
+  // the canvas setup (dragged or seeded) is the source of truth for positions
+  boats.forEach((b,i)=>{ if(setup.boats[i]) b.start = {pos: setup.boats[i]}; });
+  const course = {type:'windward_leeward', beat_length:+$('c_beat').value,
+                  laps:+$('c_laps').value, line_length:lineLen};
+  if(lineLen>0 && setup.line) course.start_line = {committee:setup.line.committee, pin:setup.line.pin};
   return {
-    name:'interactive', ref_twd:refTwd(), wind:windDict(),
-    course:{type:'windward_leeward', beat_length:+$('c_beat').value, laps:+$('c_laps').value,
-            line_length:+$('c_line').value},
+    name:'interactive', ref_twd:refTwd(), wind:windDict(), course,
     run:{dt:0.5, max_time:+$('r_max').value, sample_every:4,
          badair_enabled:baOn, badair_length:+$('ba_len').value,
          badair_half_angle:+$('ba_ang').value, badair_max_loss:+$('ba_loss').value},
-    boats: readBoats(),
+    boats,
   };
 }
 // show the bad-air tunables only when it's enabled
 function syncBadair(){ $('baParams').style.display = $('ba_on').checked ? '' : 'none'; }
 $('ba_on').addEventListener('change', syncBadair); syncBadair();
+
+// ---------- editable start-line setup (drag on the canvas) ----------
+// setup = the source of truth for the start line + each boat's start position,
+// in world metres. Seeded from the form; edited by dragging on the canvas.
+let setup = {line:null, boats:[]};
+const D2R = Math.PI/180;
+// mirror of the engine geometry so the canvas and the sim agree.
+function unitVec(brg){ return [Math.sin(brg*D2R), Math.cos(brg*D2R)]; }
+function placeOnLineJS(line, frac, behind, twd){
+  const along=[line.committee[0]-line.pin[0], line.committee[1]-line.pin[1]];
+  const u=unitVec(twd);  // toward windward; "behind" is to leeward (−u)
+  return [line.pin[0]+along[0]*frac - u[0]*behind, line.pin[1]+along[1]*frac - u[1]*behind];
+}
+// invert a world position back to (line_pos, behind) for the numeric fields
+function projectToLine(pos){
+  const line=setup.line, twd=refTwd();
+  const along=[line.committee[0]-line.pin[0], line.committee[1]-line.pin[1]];
+  const L2=along[0]*along[0]+along[1]*along[1] || 1;
+  const rel=[pos[0]-line.pin[0], pos[1]-line.pin[1]];
+  const frac=(rel[0]*along[0]+rel[1]*along[1])/L2;
+  const base=[line.pin[0]+along[0]*frac, line.pin[1]+along[1]*frac];
+  const u=unitVec(twd);
+  const behind=-((pos[0]-base[0])*u[0]+(pos[1]-base[1])*u[1]);  // leeward positive
+  return {line_pos:frac, behind};
+}
+const boatDivs = () => [...document.querySelectorAll('.boat')];
+function boatField(i,f){ const d=boatDivs()[i]; return d? d.querySelector(`[data-f=${f}]`):null; }
+// build a fresh square line + place every boat from its numeric fields
+function rebuildSetup(){
+  const len=+$('c_line').value, twd=refTwd();
+  if(len>0){
+    const right=unitVec(twd+90);  // committee (starboard) end, looking upwind
+    setup.line={committee:[right[0]*len/2, right[1]*len/2], pin:[-right[0]*len/2, -right[1]*len/2]};
+  } else setup.line=null;
+  setup.boats = boatDivs().map((d,i)=>{
+    const lp=parseFloat(boatField(i,'line_pos').value), bh=parseFloat(boatField(i,'behind').value);
+    return setup.line ? placeOnLineJS(setup.line, lp, bh, twd) : [0,0];
+  });
+}
+// reposition just boat i from its numeric fields (after typing line pos / rows back)
+function placeBoatFromFields(i){
+  if(i<0) return;
+  const lp=parseFloat(boatField(i,'line_pos').value), bh=parseFloat(boatField(i,'behind').value);
+  setup.boats[i] = setup.line ? placeOnLineJS(setup.line, lp, bh, refTwd()) : (setup.boats[i]||[0,0]);
+}
+// write a dragged boat's absolute position back to its numeric fields (display)
+function syncBoatFields(i){
+  if(!setup.line) return;
+  const {line_pos,behind}=projectToLine(setup.boats[i]);
+  const lp=boatField(i,'line_pos'), bh=boatField(i,'behind');
+  if(lp) lp.value=line_pos.toFixed(2); if(bh) bh.value=behind.toFixed(0);
+}
+// changing the line length or the wind direction re-squares the line
+['c_line','w_mean','w_start','w_shift','w_pbase','w_sdir'].forEach(id =>
+  $(id) && $(id).addEventListener('change', ()=>{ rebuildSetup(); draw(); }));
 
 // ---------- run ----------
 async function run(){
@@ -416,11 +485,19 @@ function resize(){
 }
 window.addEventListener('resize', resize);
 
+// view = zoom/pan layered on top of the fit-to-bounds transform
+let view = {scale:1, ox:0, oy:0};
 function world(){
   const b=data.bounds, pad=40*devicePixelRatio;
-  const s=Math.min((cv.width-2*pad)/(b.maxx-b.minx),(cv.height-2*pad)/(b.maxy-b.miny));
-  return {X:x=>pad+(x-b.minx)*s, Y:y=>cv.height-pad-(y-b.miny)*s, s, b};
+  const base=Math.min((cv.width-2*pad)/(b.maxx-b.minx),(cv.height-2*pad)/(b.maxy-b.miny));
+  const s=base*view.scale, cx=(b.minx+b.maxx)/2, cy=(b.miny+b.maxy)/2;
+  const X=x=>cv.width/2+(x-cx)*s+view.ox, Y=y=>cv.height/2-(y-cy)*s+view.oy;
+  const inv=(px,py)=>[(px-cv.width/2-view.ox)/s+cx, cy-(py-cv.height/2-view.oy)/s];
+  return {X, Y, s, b, inv};
 }
+function resetView(){ view={scale:1, ox:0, oy:0}; if(data) draw(); }
+// are we in start-line edit mode? (paused at the start, handles draggable)
+function editing(){ return !playing && frame===0; }
 function curFrame(b){ return b.frames[Math.min(frame,b.frames.length-1)]; }
 function curT(){ const f=data?curFrame(data.boats[0]):null; return f?f.t:0; }
 
@@ -437,50 +514,77 @@ function draw(){
     ctx.fillStyle='#9fb'; ctx.font=`${12*devicePixelRatio}px sans-serif`;
     ctx.fillText(m.name, W.X(m.pos[0])+9*devicePixelRatio, W.Y(m.pos[1]));
   }
-  drawStartLine(W);
+  const edit = editing();
+  drawStartLine(W, edit);
   drawWind(W, twd, f0?f0.tws:10);
+  const cur = currentBoats();   // unified per-boat state (replay frame, or setup in edit)
   // bad-air shadow cones (drawn under the boats so the boats sit on top)
-  if(data.badair && data.badair.enabled)
-    data.boats.forEach(b=>{ const p=b.frames[Math.min(frame,b.frames.length-1)]; drawShadow(W,b,p,twd); });
-  // boats + tracks
-  data.boats.forEach((b,bi)=>{
+  if(data.badair && data.badair.enabled) cur.forEach(c=>drawShadow(W,c,twd));
+  // tracks (replay only)
+  if(!edit) data.boats.forEach((b,bi)=>{
     const fi=Math.min(frame,b.frames.length-1);
     ctx.strokeStyle=b.color; ctx.globalAlpha=bi===selBoat?.7:.3; ctx.lineWidth=(bi===selBoat?2.2:1.4)*devicePixelRatio;
     ctx.beginPath();
     for(let i=0;i<=fi;i++){const p=b.frames[i];(i?ctx.lineTo:ctx.moveTo).call(ctx,W.X(p.x),W.Y(p.y));}
     ctx.stroke(); ctx.globalAlpha=1;
-    const p=b.frames[fi];
-    drawBoat(W.X(p.x),W.Y(p.y),p.hdg,b.color,p.man,bi===selBoat,(b.length||6)*W.s,p.mult==null?1:p.mult);
+  });
+  // boats
+  cur.forEach((c,bi)=>{
+    if(edit){ ctx.beginPath(); ctx.arc(W.X(c.x),W.Y(c.y),13*devicePixelRatio,0,7);
+      ctx.strokeStyle='#ffffff55'; ctx.lineWidth=1*devicePixelRatio; ctx.stroke(); }  // drag halo
+    drawBoat(W.X(c.x),W.Y(c.y),c.hdg,c.color,c.man,bi===selBoat,c.length*W.s,c.mult);
   });
   drawGauge(twd);
+  if(edit) drawEditHint();
   $('clock').textContent=(f0?f0.t:0).toFixed(0)+'s'; $('seek').value=frame;
 }
+// current per-boat draw state: the replay frame, or the editable setup at the start
+function currentBoats(){
+  if(editing()) return boatDivs().map((d,i)=>{
+    const tack=d.querySelector('[data-f=initial_tack]').value, p=setup.boats[i]||[0,0];
+    return {x:p[0], y:p[1], color:d.querySelector('[data-f=color]').value,
+      length:parseFloat(d.querySelector('[data-f=length]').value)||6,
+      hdg:refTwd()+(tack==='port'?42:-42), man:false, mult:1};
+  });
+  return data.boats.map(b=>{ const p=b.frames[Math.min(frame,b.frames.length-1)];
+    return {x:p.x, y:p.y, color:b.color, length:b.length||6, hdg:p.hdg, man:p.man, mult:p.mult==null?1:p.mult}; });
+}
+function lineEnds(){ return setup.line || (data.course && data.course.start_line); }
 // the start line: committee (square) + pin (round) ends joined by a dashed line
-function drawStartLine(W){
-  const sl = data.course.start_line; if(!sl) return;
+function drawStartLine(W, edit){
+  const sl = lineEnds(); if(!sl) return;
   const cx=W.X(sl.committee[0]), cy=W.Y(sl.committee[1]), px=W.X(sl.pin[0]), py=W.Y(sl.pin[1]);
   ctx.save();
   ctx.strokeStyle='#cdd6e0aa'; ctx.lineWidth=1.4*devicePixelRatio; ctx.setLineDash([6*devicePixelRatio,5*devicePixelRatio]);
   ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(px,py); ctx.stroke(); ctx.setLineDash([]);
-  const r=4.5*devicePixelRatio;
-  ctx.fillStyle='#dce3ea'; ctx.fillRect(cx-r,cy-r,2*r,2*r);            // committee boat
+  const r=(edit?6.5:4.5)*devicePixelRatio;
+  if(edit){ ctx.strokeStyle='#ffffff66'; ctx.lineWidth=1*devicePixelRatio;
+    ctx.strokeRect(cx-r-3,cy-r-3,2*r+6,2*r+6); ctx.beginPath(); ctx.arc(px,py,r+4,0,7); ctx.stroke(); }
+  ctx.fillStyle='#dce3ea'; ctx.fillRect(cx-r,cy-r,2*r,2*r);            // committee boat (RC)
   ctx.beginPath(); ctx.arc(px,py,r,0,7); ctx.fillStyle='#ff7043'; ctx.fill();  // pin buoy
+  ctx.fillStyle='#9fb'; ctx.font=`${11*devicePixelRatio}px sans-serif`;
+  ctx.fillText('RC', cx+r+3*devicePixelRatio, cy-r); ctx.fillText('pin', px+r+3*devicePixelRatio, py+r+6*devicePixelRatio);
+  ctx.restore();
+}
+function drawEditHint(){
+  ctx.save(); ctx.fillStyle='#9fb'; ctx.font=`${11*devicePixelRatio}px sans-serif`; ctx.textAlign='left';
+  ctx.fillText('drag boats / RC / pin to set up · scroll to zoom · press ▶ to sail', 12*devicePixelRatio, cv.height-12*devicePixelRatio);
   ctx.restore();
 }
 // a boat's downwind dirty-air cone, sized in metres from the shared model params
-function drawShadow(W,b,p,twd){
-  const reach=(b.length||6)*data.badair.length;                       // metres downwind
-  const halfFar=0.5*(b.length||6)+reach*Math.tan(data.badair.half_angle*Math.PI/180);
-  const halfNear=0.5*(b.length||6);
+function drawShadow(W,c,twd){
+  const reach=c.length*data.badair.length;                            // metres downwind
+  const halfFar=0.5*c.length+reach*Math.tan(data.badair.half_angle*Math.PI/180);
+  const halfNear=0.5*c.length;
   const dwd=twd+180, dx=Math.sin(dwd*Math.PI/180), dy=Math.cos(dwd*Math.PI/180);  // downwind unit (E,N)
   const ex=-dy, ey=dx;                                                // perpendicular (a rung direction)
-  const W2=(qx,qy)=>[W.X(p.x+qx), W.Y(p.y+qy)];
+  const W2=(qx,qy)=>[W.X(c.x+qx), W.Y(c.y+qy)];
   const n1=W2(ex*halfNear, ey*halfNear), n2=W2(-ex*halfNear, -ey*halfNear);
   const f1=W2(dx*reach+ex*halfFar, dy*reach+ey*halfFar), f2=W2(dx*reach-ex*halfFar, dy*reach-ey*halfFar);
   ctx.save();
   ctx.beginPath(); ctx.moveTo(n1[0],n1[1]); ctx.lineTo(f1[0],f1[1]); ctx.lineTo(f2[0],f2[1]); ctx.lineTo(n2[0],n2[1]); ctx.closePath();
-  ctx.fillStyle=hexA(b.color,0.12); ctx.fill();
-  ctx.strokeStyle=hexA(b.color,0.22); ctx.lineWidth=1*devicePixelRatio; ctx.stroke();
+  ctx.fillStyle=hexA(c.color,0.12); ctx.fill();
+  ctx.strokeStyle=hexA(c.color,0.22); ctx.lineWidth=1*devicePixelRatio; ctx.stroke();
   ctx.restore();
 }
 // hex (#rrggbb) -> rgba string at alpha a
@@ -566,6 +670,61 @@ function tick(){
   requestAnimationFrame(tick);
 }
 
+// ---------- map zoom / pan + drag-to-place ----------
+let drag = null;
+function evPos(e){ const r=cv.getBoundingClientRect();
+  return [(e.clientX-r.left)*devicePixelRatio, (e.clientY-r.top)*devicePixelRatio]; }
+function zoomAt(mx, my, k){
+  if(!data) return;
+  const before=world().inv(mx,my);
+  view.scale=Math.min(40, Math.max(0.2, view.scale*k));
+  const W=world(); view.ox+=mx-W.X(before[0]); view.oy+=my-W.Y(before[1]);
+  draw();
+}
+cv.addEventListener('wheel', e=>{ e.preventDefault(); const [mx,my]=evPos(e);
+  zoomAt(mx,my, Math.exp(-e.deltaY*0.0015)); }, {passive:false});
+// pick a draggable handle (line ends + boat start markers) near the cursor
+function hitHandle(W,mx,my){
+  const R=15*devicePixelRatio, near=(p)=>Math.hypot(mx-W.X(p[0]),my-W.Y(p[1]))<R;
+  const sl=lineEnds();
+  if(sl && near(sl.committee)) return {kind:'committee'};
+  if(sl && near(sl.pin)) return {kind:'pin'};
+  for(let i=0;i<setup.boats.length;i++) if(near(setup.boats[i])) return {kind:'boat', idx:i};
+  return null;
+}
+cv.addEventListener('pointerdown', e=>{
+  if(!data) return; const [mx,my]=evPos(e); const W=world();
+  const h = editing() ? hitHandle(W,mx,my) : null;
+  if(h){ drag={...h}; selBoat = h.kind==='boat'? h.idx : selBoat; }
+  else drag={kind:'pan', sx:mx, sy:my, ox:view.ox, oy:view.oy};
+  cv.setPointerCapture(e.pointerId); cv.style.cursor='grabbing';
+});
+cv.addEventListener('pointermove', e=>{
+  if(!drag) return; const [mx,my]=evPos(e); const W=world(); const w=W.inv(mx,my);
+  if(drag.kind==='pan'){ view.ox=drag.ox+(mx-drag.sx); view.oy=drag.oy+(my-drag.sy); }
+  else if(drag.kind==='boat'){ setup.boats[drag.idx]=[w[0],w[1]]; syncBoatFields(drag.idx); }
+  else if(drag.kind==='committee'){ setup.line.committee=[w[0],w[1]]; syncLineFields(); }
+  else if(drag.kind==='pin'){ setup.line.pin=[w[0],w[1]]; syncLineFields(); }
+  draw();
+});
+function endDrag(e){
+  if(!drag) return; const wasEdit = drag.kind!=='pan'; drag=null;
+  cv.releasePointerCapture && cv.releasePointerCapture(e.pointerId); cv.style.cursor='';
+  if(wasEdit) run();   // re-sail with the new setup so the result updates
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+// keep the start-line length field in step with a dragged line
+function syncLineFields(){
+  if(!setup.line) return;
+  const d=[setup.line.committee[0]-setup.line.pin[0], setup.line.committee[1]-setup.line.pin[1]];
+  $('c_line').value = Math.round(Math.hypot(d[0],d[1]));
+  setup.boats.forEach((_,i)=>syncBoatFields(i));   // boats' line pos/bias relative to the new line
+}
+$('zin') && $('zin').addEventListener('click', ()=>zoomAt(cv.width/2,cv.height/2,1.3));
+$('zout') && $('zout').addEventListener('click', ()=>zoomAt(cv.width/2,cv.height/2,1/1.3));
+$('zfit') && $('zfit').addEventListener('click', resetView);
+
 // ---------- footer: build stamp + feedback links ----------
 const REPO_URL = 'https://github.com/weaties/shiftsimulator';
 let buildVer = null;
@@ -614,7 +773,7 @@ $('reportBug').addEventListener('click', e=>{ e.preventDefault(); window.open(bu
 $('reportFeature').addEventListener('click', e=>{ e.preventDefault(); window.open(buildIssueUrl('feature'),'_blank'); });
 
 // auto-run on load so there's something to see
-window.addEventListener('load', ()=>{ decorate(document); resize(); run(); loadVersion(); });
+window.addEventListener('load', ()=>{ decorate(document); rebuildSetup(); resize(); run(); loadVersion(); });
 </script>
 </body>
 </html>

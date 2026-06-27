@@ -171,6 +171,25 @@ def test_clearing_bad_air_helps() -> None:
     assert b_clear.finish_time < b_gassed.finish_time, "clearing the air should help B"
 
 
+def test_explicit_start_line_overrides_square_one() -> None:
+    # a dragged / biased line: endpoints given explicitly, not square to the wind
+    cfg = _situation("starboard")
+    cfg["course"]["start_line"] = {"committee": [70, 10], "pin": [-50, -10]}
+    sc = Scenario.from_dict(cfg)
+    assert sc.course.start_line is not None
+    assert sc.course.start_line.committee == (70, 10)
+    assert sc.course.start_line.pin == (-50, -10)
+
+
+def test_boat_absolute_start_pos() -> None:
+    # a dragged boat: absolute position overrides line placement
+    cfg = _situation("starboard")
+    cfg["boats"][0]["start"] = {"pos": [12.5, -7.0]}
+    sc = Scenario.from_dict(cfg)
+    assert sc.starts[0] == (12.5, -7.0)
+    assert all(s.finished for s in sc.run_sim())
+
+
 def test_situation_round_trips_with_length_and_beam() -> None:
     cfg = _situation("starboard")
     cfg["boats"][0]["length"] = 6.5

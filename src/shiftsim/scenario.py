@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .boat import BoatConfig, BoatState
-from .course import Course, place_on_line, windward_leeward
+from .course import Course, StartLine, place_on_line, windward_leeward
 from .polar import Polar, synthetic_polar
 from .simulator import RunConfig, simulate
 from .strategy import strategy_from_dict
@@ -56,24 +56,33 @@ def boat_from_dict(d: dict) -> BoatConfig:
 
 def course_from_dict(d: dict, ref_twd: float) -> Course:
     if d.get("type") == "windward_leeward":
-        return windward_leeward(
+        course = windward_leeward(
             beat_length=d.get("beat_length", 1000.0),
             mean_twd=ref_twd,
             laps=d.get("laps", 1),
             line_length=d.get("line_length", 0.0),
         )
+        # An explicit start line (e.g. dragged in the viewer) overrides the square
+        # one, so the line can be angled / biased relative to the wind.
+        sl = d.get("start_line")
+        if sl is not None:
+            course.start_line = StartLine(committee=tuple(sl["committee"]), pin=tuple(sl["pin"]))
+        return course
     return Course.from_dict(d)
 
 
 def start_pos(boat_dict: dict, course: Course, ref_twd: float) -> Vec:
-    """Where a boat begins. With a start line and a ``start`` placement block
-    (``{"line_pos", "behind"}``) the boat is set on the line; otherwise it starts
-    at ``course.start`` (the historical behaviour)."""
+    """Where a boat begins. A ``start`` block can give an absolute ``pos``
+    (``[x, y]``, e.g. dragged in the viewer) or a placement on the line
+    (``{"line_pos", "behind"}``); otherwise the boat starts at ``course.start``."""
     s = boat_dict.get("start")
-    if s is not None and course.start_line is not None:
-        return place_on_line(
-            course.start_line, s.get("line_pos", 0.5), s.get("behind", 0.0), ref_twd
-        )
+    if s is not None:
+        if s.get("pos") is not None:
+            return tuple(s["pos"])
+        if course.start_line is not None and "line_pos" in s:
+            return place_on_line(
+                course.start_line, s.get("line_pos", 0.5), s.get("behind", 0.0), ref_twd
+            )
     return course.start
 
 
