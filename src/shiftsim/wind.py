@@ -13,12 +13,12 @@ the same conditions (a fair A/B test).
 Compose fields with :class:`CompositeWind` to, e.g., put an oscillation on top of
 a persistent trend with puffs.
 """
+
 from __future__ import annotations
 
 import math
 import random
 from dataclasses import dataclass, field
-from typing import List, Tuple
 
 from .geometry import Vec, wrap360
 
@@ -26,7 +26,7 @@ from .geometry import Vec, wrap360
 class WindField:
     """Base class. Subclasses implement :meth:`at`."""
 
-    def at(self, t: float, pos: Vec) -> Tuple[float, float]:
+    def at(self, t: float, pos: Vec) -> tuple[float, float]:
         """Return ``(twd_deg, tws_kn)`` at time ``t`` (s) and ``pos`` (m)."""
         raise NotImplementedError
 
@@ -41,7 +41,7 @@ class SteadyWind(WindField):
     twd: float = 0.0
     tws: float = 10.0
 
-    def at(self, t: float, pos: Vec) -> Tuple[float, float]:
+    def at(self, t: float, pos: Vec) -> tuple[float, float]:
         return (wrap360(self.twd), self.tws)
 
     def to_dict(self) -> dict:
@@ -63,15 +63,20 @@ class OscillatingWind(WindField):
     phase: float = 0.0
     tws: float = 10.0
 
-    def at(self, t: float, pos: Vec) -> Tuple[float, float]:
+    def at(self, t: float, pos: Vec) -> tuple[float, float]:
         ph = math.radians(self.phase)
         twd = self.mean_twd + self.amplitude * math.sin(2 * math.pi * t / self.period + ph)
         return (wrap360(twd), self.tws)
 
     def to_dict(self) -> dict:
-        return {"type": "oscillating", "mean_twd": self.mean_twd,
-                "amplitude": self.amplitude, "period": self.period,
-                "phase": self.phase, "tws": self.tws}
+        return {
+            "type": "oscillating",
+            "mean_twd": self.mean_twd,
+            "amplitude": self.amplitude,
+            "period": self.period,
+            "phase": self.phase,
+            "tws": self.tws,
+        }
 
 
 @dataclass
@@ -89,14 +94,18 @@ class PersistentShift(WindField):
     duration: float = 600.0
     tws: float = 10.0
 
-    def at(self, t: float, pos: Vec) -> Tuple[float, float]:
+    def at(self, t: float, pos: Vec) -> tuple[float, float]:
         frac = min(1.0, max(0.0, t / self.duration)) if self.duration > 0 else 1.0
         return (wrap360(self.start_twd + self.total_shift * frac), self.tws)
 
     def to_dict(self) -> dict:
-        return {"type": "persistent", "start_twd": self.start_twd,
-                "total_shift": self.total_shift, "duration": self.duration,
-                "tws": self.tws}
+        return {
+            "type": "persistent",
+            "start_twd": self.start_twd,
+            "total_shift": self.total_shift,
+            "duration": self.duration,
+            "tws": self.tws,
+        }
 
 
 @dataclass
@@ -115,9 +124,9 @@ class PuffyWind(WindField):
     veer: float = 3.0
     n_components: int = 4
     seed: int = 0
-    _periods: List[float] = field(default_factory=list, repr=False)
-    _phases: List[float] = field(default_factory=list, repr=False)
-    _weights: List[float] = field(default_factory=list, repr=False)
+    _periods: list[float] = field(default_factory=list, repr=False)
+    _phases: list[float] = field(default_factory=list, repr=False)
+    _weights: list[float] = field(default_factory=list, repr=False)
 
     def __post_init__(self) -> None:
         rng = random.Random(self.seed)
@@ -130,19 +139,25 @@ class PuffyWind(WindField):
 
     def _noise(self, t: float, salt: float) -> float:
         v = 0.0
-        for p, ph, w in zip(self._periods, self._phases, self._weights):
+        for p, ph, w in zip(self._periods, self._phases, self._weights, strict=False):
             v += w * math.sin(2 * math.pi * t / p + ph + salt)
         return v  # roughly in [-1, 1]
 
-    def at(self, t: float, pos: Vec) -> Tuple[float, float]:
+    def at(self, t: float, pos: Vec) -> tuple[float, float]:
         tws = self.base_tws * (1.0 + self.gust_fraction * self._noise(t, 0.0))
         twd = self.base_twd + self.veer * self._noise(t, 1.7)
         return (wrap360(twd), max(0.1, tws))
 
     def to_dict(self) -> dict:
-        return {"type": "puffy", "base_tws": self.base_tws, "base_twd": self.base_twd,
-                "gust_fraction": self.gust_fraction, "veer": self.veer,
-                "n_components": self.n_components, "seed": self.seed}
+        return {
+            "type": "puffy",
+            "base_tws": self.base_tws,
+            "base_twd": self.base_twd,
+            "gust_fraction": self.gust_fraction,
+            "veer": self.veer,
+            "n_components": self.n_components,
+            "seed": self.seed,
+        }
 
 
 @dataclass
@@ -155,9 +170,9 @@ class CompositeWind(WindField):
     SteadyWind first, then layer OscillatingWind / PuffyWind on top.
     """
 
-    fields: List[WindField] = field(default_factory=list)
+    fields: list[WindField] = field(default_factory=list)
 
-    def at(self, t: float, pos: Vec) -> Tuple[float, float]:
+    def at(self, t: float, pos: Vec) -> tuple[float, float]:
         if not self.fields:
             return (0.0, 10.0)
         base_twd, base_tws = self.fields[0].at(t, pos)

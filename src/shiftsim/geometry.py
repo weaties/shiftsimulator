@@ -12,12 +12,12 @@ Coordinate convention
 Keeping every angle in one convention is the single most important thing for
 this project staying debuggable, so all conversions live here.
 """
+
 from __future__ import annotations
 
 import math
-from typing import Tuple
 
-Vec = Tuple[float, float]
+Vec = tuple[float, float]
 
 
 def unit(bearing_deg: float) -> Vec:

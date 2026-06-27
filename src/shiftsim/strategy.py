@@ -24,6 +24,7 @@ Add your own by subclassing :class:`Strategy` (or :class:`_HeaderSense` if it's
 header-based), implementing ``decide``/``explain``, and registering it in
 ``_REGISTRY`` (see the ``add-boat-strategy`` skill).
 """
+
 from __future__ import annotations
 
 import math
@@ -38,14 +39,14 @@ class StrategyContext:
 
     t: float
     dt: float
-    point_of_sail: str        # "upwind" or "downwind"
-    tack: str                 # current tack: "port" or "starboard"
+    point_of_sail: str  # "upwind" or "downwind"
+    tack: str  # current tack: "port" or "starboard"
     twd: float
     tws: float
-    twa: float                # the boat's optimal angle off the wind this leg
-    heading_current: float    # heading if we stay on this tack
-    heading_other: float      # heading if we flip tacks
-    bearing_to_mark: float    # bearing from boat to the current target mark
+    twa: float  # the boat's optimal angle off the wind this leg
+    heading_current: float  # heading if we stay on this tack
+    heading_other: float  # heading if we flip tacks
+    bearing_to_mark: float  # bearing from boat to the current target mark
     dist_to_mark: float
 
     # signed error (deg) between a heading and the mark bearing; smaller = better
@@ -105,9 +106,9 @@ class _HeaderSense(Strategy):
     steady wind. With this measure, steady wind => never a header => sail to the
     layline."""
 
-    def __init__(self, mean_tau: float = 90.0):
+    def __init__(self, mean_tau: float = 90.0) -> None:
         self.mean_tau = float(mean_tau)
-        self._mean = None
+        self._mean: float | None = None
 
     def reset(self) -> None:
         self._mean = None
@@ -122,14 +123,14 @@ class _HeaderSense(Strategy):
             alpha = 1.0 - math.exp(-ctx.dt / max(1e-6, self.mean_tau))
             self._mean = self._mean + alpha * wrap180(ctx.twd - self._mean)
             mean = self._mean
-        shift = wrap180(ctx.twd - mean)               # + = veered right of mean
+        shift = wrap180(ctx.twd - mean)  # + = veered right of mean
         headed = (-shift) if ctx.tack == "starboard" else shift
         if ctx.point_of_sail == "downwind":
-            headed = -headed                          # the sense mirrors on a run
+            headed = -headed  # the sense mirrors on a run
         return headed
 
     @property
-    def mean_wind(self):
+    def mean_wind(self) -> float | None:
         return self._mean
 
 
@@ -144,7 +145,7 @@ class TackOnHeader(_HeaderSense):
 
     name = "tack_on_header"
 
-    def __init__(self, threshold: float = 8.0, mean_tau: float = 90.0):
+    def __init__(self, threshold: float = 8.0, mean_tau: float = 90.0) -> None:
         super().__init__(mean_tau)
         self.threshold = float(threshold)
 
@@ -155,10 +156,11 @@ class TackOnHeader(_HeaderSense):
         headed = self._headed(ctx, update=False)
         return {
             "rule": "tack when the wind has headed the current tack (vs the mean) "
-                    "by more than the threshold",
+            "by more than the threshold",
             "mean_wind_deg": round(self.mean_wind, 1) if self.mean_wind is not None else None,
             "current_wind_deg": round(ctx.twd, 1),
-            "headed_deg": round(headed, 1), "threshold_deg": self.threshold,
+            "headed_deg": round(headed, 1),
+            "threshold_deg": self.threshold,
         }
 
     def to_dict(self) -> dict:
@@ -173,21 +175,22 @@ class TackOnLift(_HeaderSense):
 
     name = "tack_on_lift"
 
-    def __init__(self, threshold: float = 8.0, mean_tau: float = 90.0):
+    def __init__(self, threshold: float = 8.0, mean_tau: float = 90.0) -> None:
         super().__init__(mean_tau)
         self.threshold = float(threshold)
 
     def decide(self, ctx: StrategyContext) -> bool:
-        return self._headed(ctx, update=True) <= -self.threshold   # lifted past threshold
+        return self._headed(ctx, update=True) <= -self.threshold  # lifted past threshold
 
     def explain(self, ctx: StrategyContext) -> dict:
         headed = self._headed(ctx, update=False)
         return {
             "rule": "(control) tack when LIFTED past the threshold — i.e. tack "
-                    "onto the header. Expected to lose.",
+            "onto the header. Expected to lose.",
             "mean_wind_deg": round(self.mean_wind, 1) if self.mean_wind is not None else None,
             "current_wind_deg": round(ctx.twd, 1),
-            "lifted_deg": round(-headed, 1), "threshold_deg": self.threshold,
+            "lifted_deg": round(-headed, 1),
+            "threshold_deg": self.threshold,
         }
 
     def to_dict(self) -> dict:
@@ -218,8 +221,9 @@ class TackAtHalfHeader(_HeaderSense):
 
     name = "tack_at_half_header"
 
-    def __init__(self, amplitude: float | None = None, fraction: float = 0.5,
-                 mean_tau: float = 90.0):
+    def __init__(
+        self, amplitude: float | None = None, fraction: float = 0.5, mean_tau: float = 90.0
+    ) -> None:
         super().__init__(mean_tau)
         self.amplitude = None if amplitude is None else float(amplitude)
         self.fraction = float(fraction)
@@ -244,8 +248,10 @@ class TackAtHalfHeader(_HeaderSense):
             "rule": "tack when headed >= fraction × amplitude (halfway into the header)",
             "mean_wind_deg": round(self.mean_wind, 1) if self.mean_wind is not None else None,
             "current_wind_deg": round(ctx.twd, 1),
-            "headed_deg": round(headed, 1), "amplitude_deg": round(amp, 1),
-            "trigger_deg": round(self.fraction * amp, 1), "fraction": self.fraction,
+            "headed_deg": round(headed, 1),
+            "amplitude_deg": round(amp, 1),
+            "trigger_deg": round(self.fraction * amp, 1),
+            "fraction": self.fraction,
         }
 
     def to_dict(self) -> dict:
@@ -260,7 +266,7 @@ class FixedInterval(Strategy):
 
     name = "fixed_interval"
 
-    def __init__(self, period: float = 120.0):
+    def __init__(self, period: float = 120.0) -> None:
         self.period = float(period)
         self._next = period
 
@@ -274,8 +280,11 @@ class FixedInterval(Strategy):
         return False
 
     def explain(self, ctx: StrategyContext) -> dict:
-        return {"rule": "tacks every period seconds (clock-based)",
-                "period_s": self.period, "t_s": round(ctx.t, 1)}
+        return {
+            "rule": "tacks every period seconds (clock-based)",
+            "period_s": self.period,
+            "t_s": round(ctx.t, 1),
+        }
 
     def to_dict(self) -> dict:
         return {"name": self.name, "period": self.period}

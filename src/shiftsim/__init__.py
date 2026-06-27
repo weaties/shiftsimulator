@@ -14,6 +14,7 @@ Or from the shell::
 
 See CLAUDE.md for the model, conventions, and the project skills.
 """
+
 from .scenario import Scenario  # noqa: F401
 
 __all__ = ["Scenario"]

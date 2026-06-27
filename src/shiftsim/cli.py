@@ -9,6 +9,7 @@ viewer), ``ladder_gain.svg`` and ``tracks.svg`` into the output dir. ``serve``
 starts the interactive viewer where you can edit the wind, boats and tack costs
 in the browser and re-run live.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -39,16 +40,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 def _cmd_serve(args: argparse.Namespace) -> int:
     from .serve import serve
+
     serve(directory=os.path.abspath(args.dir), port=args.port)
     return 0
 
 
 def _cmd_polar(args: argparse.Namespace) -> int:
     from .polar import synthetic_polar
+
     p = synthetic_polar(max_speed=args.max_speed, pointing=args.pointing)
     header = "twa/tws," + ",".join(str(t) for t in p.tws)
     rows = [header]
-    for a, row in zip(p.twa, p.table):
+    for a, row in zip(p.twa, p.table, strict=False):
         rows.append(f"{a}," + ",".join(f"{v:.3f}" for v in row))
     text = "\n".join(rows)
     if args.out:
@@ -57,13 +60,17 @@ def _cmd_polar(args: argparse.Namespace) -> int:
         print(f"Wrote {args.out}")
     else:
         print(text)
-    u = p.best_upwind(10.0); d = p.best_downwind(10.0)
-    print(f"\n# at 10kn: best upwind TWA {u[0]:.0f} (VMG {u[1]:.2f}), "
-          f"best downwind TWA {d[0]:.0f} (VMG {d[1]:.2f})", file=sys.stderr)
+    u = p.best_upwind(10.0)
+    d = p.best_downwind(10.0)
+    print(
+        f"\n# at 10kn: best upwind TWA {u[0]:.0f} (VMG {u[1]:.2f}), "
+        f"best downwind TWA {d[0]:.0f} (VMG {d[1]:.2f})",
+        file=sys.stderr,
+    )
     return 0
 
 
-def main(argv=None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="shiftsim", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
