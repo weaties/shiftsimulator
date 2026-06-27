@@ -1,7 +1,18 @@
 # Releases
 
-Release notes for shiftsim. The `promote.yml` workflow (added with the
-deployment feature) gates `main → stage → live` on a new `##` heading here.
+Release notes for shiftsim. The `promote.yml` workflow gates `main → stage`
+on a new `##` heading here (commit sets that only touch `docs/roadmap.md` are
+exempt). `stage → live` has no gate.
+
+## 0.3.0 — Release-promotion gate + parity with helmlog
+
+- `.github/workflows/promote.yml` — manual, fast-forward-only promotion of
+  `main → stage → live` with dated tags and a rollback path, mirroring helmlog.
+  Promoting to `stage` requires a new `##` entry in this file.
+- `stage` and `live` deployment branches created off `main`.
+- Agent docs and dev toolchain brought to parity with helmlog (single canonical
+  `AGENTS.md` imported by `CLAUDE.md`; `uv` dev toolchain; ruff + mypy; CI lint
+  job). See the parity PR for detail.
 
 ## 0.2.0 — Deploy to corvopi-live (#1)
 
