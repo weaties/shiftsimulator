@@ -27,12 +27,23 @@ class Mark:
 
 
 @dataclass
+class StartLine:
+    """The start line, looking *upwind*: ``committee`` is the starboard (right)
+    end, ``pin`` the port (left) end. Boats are placed along it (see
+    :func:`place_on_line`) for a start-line situation."""
+
+    committee: Vec  # starboard / right-hand end
+    pin: Vec  # port / left-hand end
+
+
+@dataclass
 class Course:
     marks: list[Mark]
     start: Vec = (0.0, 0.0)
+    start_line: StartLine | None = None
 
     def to_dict(self) -> dict:
-        return {
+        d: dict = {
             "start": list(self.start),
             "marks": [
                 {
@@ -44,6 +55,12 @@ class Course:
                 for m in self.marks
             ],
         }
+        if self.start_line is not None:
+            d["start_line"] = {
+                "committee": list(self.start_line.committee),
+                "pin": list(self.start_line.pin),
+            }
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> Course:
@@ -56,15 +73,48 @@ class Course:
             )
             for m in d["marks"]
         ]
-        return cls(marks=marks, start=tuple(d.get("start", (0.0, 0.0))))
+        sl = d.get("start_line")
+        line = (
+            StartLine(committee=tuple(sl["committee"]), pin=tuple(sl["pin"]))
+            if sl is not None
+            else None
+        )
+        return cls(marks=marks, start=tuple(d.get("start", (0.0, 0.0))), start_line=line)
 
 
-def windward_leeward(beat_length: float = 1000.0, mean_twd: float = 0.0, laps: int = 1) -> Course:
+def start_line_across(twd: float, length: float, center: Vec = (0.0, 0.0)) -> StartLine:
+    """A start line ``length`` metres long, square to the wind, centred on
+    ``center``. Looking upwind (toward ``unit(twd)``) the committee end is to the
+    right (``unit(twd + 90)``) and the pin to the left."""
+    from .geometry import add, scale, unit
+
+    right = unit(twd + 90.0)  # starboard end direction, looking upwind
+    return StartLine(
+        committee=add(center, scale(right, length / 2.0)),
+        pin=add(center, scale(right, -length / 2.0)),
+    )
+
+
+def place_on_line(line: StartLine, fraction: float, behind: float, twd: float) -> Vec:
+    """A position ``fraction`` of the way from the **pin (0.0)** to the
+    **committee (1.0)** end of ``line``, moved ``behind`` metres to leeward
+    (down the ``-unit(twd)`` axis)."""
+    from .geometry import add, scale, sub, unit
+
+    along = sub(line.committee, line.pin)
+    base = add(line.pin, scale(along, fraction))
+    return add(base, scale(unit(twd), -behind))
+
+
+def windward_leeward(
+    beat_length: float = 1000.0, mean_twd: float = 0.0, laps: int = 1, line_length: float = 0.0
+) -> Course:
     """A windward-leeward course aligned with ``mean_twd``.
 
     The windward mark sits ``beat_length`` metres dead upwind of the start
     (i.e. in the direction the wind blows from); the leeward mark sits back at
-    the start line. ``laps`` repeats the up/down cycle.
+    the start line. ``laps`` repeats the up/down cycle. When ``line_length > 0``
+    a start line of that length is laid across the start, square to the wind.
     """
     from .geometry import add, scale, unit
 
@@ -76,4 +126,5 @@ def windward_leeward(beat_length: float = 1000.0, mean_twd: float = 0.0, laps: i
         suffix = "" if laps == 1 else f"-{lap + 1}"
         marks.append(Mark(f"windward{suffix}", wm, "upwind"))
         marks.append(Mark(f"leeward{suffix}", lm, "downwind"))
-    return Course(marks=marks, start=(0.0, 0.0))
+    line = start_line_across(mean_twd, line_length) if line_length > 0 else None
+    return Course(marks=marks, start=(0.0, 0.0), start_line=line)

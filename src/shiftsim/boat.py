@@ -33,6 +33,8 @@ class BoatConfig:
     min_time_between_maneuvers: float = 8.0  # debounce so a boat can't flip every step
     initial_tack: str = "starboard"  # which tack to start the first beat on
     color: str = "#1f77b4"  # for the web replay / charts
+    length: float = 6.0  # LOA (m); sets the bad-air shadow reach and the glyph size
+    beam: float = 2.0  # max beam (m); the boat's drawn footprint
 
 
 @dataclass
@@ -51,6 +53,7 @@ class Sample:
     ladder: float  # progress up the wind axis (for ladder-rung gains)
     leg: int
     maneuvering: bool
+    wind_mult: float = 1.0  # local TWS multiplier from bad air (1.0 = clean air)
 
 
 @dataclass
