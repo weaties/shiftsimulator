@@ -19,12 +19,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      # The engine is pure standard library — nothing to install.
+      # The engine is pure standard library — nothing to install. Running the
+      # suite on bare python also proves the deployed Pi path (system python3,
+      # no uv) keeps working.
       - name: Run test suite
         run: python tests/run_all.py
 
+  lint:
+    # ruff + mypy via the uv-managed dev toolchain (uv is dev/CI only; the
+    # engine and the Pi runtime stay pure-stdlib).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+      - name: Install dev toolchain
+        run: uv sync
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format check
+        run: uv run ruff format --check .
+      - name: Mypy
+        run: uv run mypy src/
+
   docs-sync:
-    # Guards the "keep the docs in sync" rule from CLAUDE.md: every field
+    # Guards the "keep the docs in sync" rule from AGENTS.md: every field
     # tooltip in the web UI must link to a real section in docs.html.
     runs-on: ubuntu-latest
     steps:
