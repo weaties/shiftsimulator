@@ -20,6 +20,7 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from .badair import BadAirParams, shadow_multipliers
 from .boat import BoatState, Sample
 from .geometry import add, bearing_of, dot, norm, scale, sub, unit, wrap180, wrap360
 from .strategy import StrategyContext
@@ -56,6 +57,22 @@ class RunConfig:
     no_maneuver_radius: float = 60.0  # m; inside this only laylines/recovery act, not tactics
     thrash_limit: int = 4  # maneuvers within thrash_window before a boat is
     thrash_window: float = 55.0  # s -- flagged "struggling" and sailed on laylines only
+    # --- bad-air (wind shadow) model; see badair.py. Off by default so existing
+    # scenarios are byte-for-byte unchanged. ---
+    badair_enabled: bool = False
+    badair_length: float = 8.0  # shadow reach in boat lengths
+    badair_half_angle: float = 12.0  # cone half-angle (deg)
+    badair_max_loss: float = 0.40  # max fractional TWS loss at the transom
+    badair_cap: float = 0.85  # max combined loss (never fully becalmed)
+
+    def badair_params(self) -> BadAirParams:
+        return BadAirParams(
+            enabled=self.badair_enabled,
+            length=self.badair_length,
+            half_angle=self.badair_half_angle,
+            max_loss=self.badair_max_loss,
+            cap=self.badair_cap,
+        )
 
 
 class Simulator:
@@ -68,11 +85,12 @@ class Simulator:
         self.run = run or RunConfig()
         self._ladder_axis = unit(ref_twd)  # +ve component = toward windward
 
-    def step_boat(self, b: BoatState, t: float, record: bool) -> None:
+    def step_boat(self, b: BoatState, t: float, record: bool, wind_mult: float = 1.0) -> None:
         if b.finished:
             return
         mark = self.course.marks[b.leg]
         twd, tws = self.wind.at(t, b.pos)
+        tws *= wind_mult  # bad air: less wind in another boat's shadow -> slower
 
         # slowly-adapting wind estimate used to place stable laylines: smooths
         # oscillations but tracks a persistent trend (see _at_layline).
@@ -168,6 +186,7 @@ class Simulator:
                     ladder=round(ladder, 2),
                     leg=b.leg,
                     maneuvering=factor < 0.999,
+                    wind_mult=round(wind_mult, 3),
                 )
             )
 
@@ -334,11 +353,25 @@ def simulate(
             )
         )
 
+    badair = rc.badair_params()
     n_steps = int(math.ceil(rc.max_time / rc.dt))
     for i in range(n_steps):
         t = i * rc.dt
         record = i % rc.sample_every == 0
         if all(b.finished for b in boats):
             break
-        for b in boats:
-            sim.step_boat(b, t, record)
+        mults = _wind_mults(boats, wind, t, badair)
+        for b, mult in zip(boats, mults, strict=False):
+            sim.step_boat(b, t, record, mult)
+
+
+def _wind_mults(
+    boats: list[BoatState], wind: WindField, t: float, badair: BadAirParams
+) -> list[float]:
+    """Per-boat bad-air wind multiplier from a **start-of-step snapshot** of every
+    boat's position, so the result is independent of the order boats are stepped
+    (and the run stays deterministic). Finished boats cast no shadow."""
+    if not badair.enabled:
+        return [1.0] * len(boats)
+    snap = [(b.pos, 0.0 if b.finished else b.cfg.length, wind.at(t, b.pos)[0]) for b in boats]
+    return shadow_multipliers(snap, badair)

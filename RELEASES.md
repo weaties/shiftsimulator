@@ -4,6 +4,29 @@ Release notes for shiftsim. The `promote.yml` workflow gates `main → stage`
 on a new `##` heading here (commit sets that only touch `docs/roadmap.md` are
 exempt). `stage → live` has no gate.
 
+## 0.6.0 — Start-line situations + bad-air model
+
+- **First boat-on-boat interaction in the engine:** a deterministic **bad-air
+  (wind-shadow) model** (`shiftsim.badair`). Each boat casts a cone of dirty air
+  downwind; a boat inside it sees reduced true wind and so sails slower. Models
+  the velocity deficit only (no direction bending yet), uses the true-wind
+  downwind axis, and combines/cap-limits multiple shadows so a boat is never
+  fully becalmed.
+- **Start-line geometry:** a `StartLine` (committee + pin) on the `Course`,
+  `windward_leeward(line_length=…)`, and per-boat placement on the line
+  (`line_pos` / `behind`). Boats gain **`length`/`beam`** (shadow reach + drawn
+  footprint).
+- **Determinism preserved:** the step loop is two-phase — each boat's wind
+  multiplier is computed from a start-of-step snapshot of every boat, so the run
+  is independent of step order (`test_determinism` still holds). Bad air is
+  **off by default**, so existing scenarios and tactical regressions are
+  unchanged.
+- **Viewer:** start-line controls + per-boat length/beam/placement; the replay
+  draws the start line, translucent shadow cones, tints a gassed boat toward red,
+  and scales the glyph by length. New **% in bad air** result column and metric.
+- Docs: `web/docs.html#start-line` and `#bad-air` sections; new
+  `scenarios/start_line_badair.json`. Closes #13.
+
 ## 0.5.0 — Deploy/admin status page
 
 - New **`web/admin.html`** deploy page (linked from the viewer footer), the

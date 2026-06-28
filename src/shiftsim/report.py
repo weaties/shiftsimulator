@@ -59,6 +59,10 @@ def replay_data(scenario: Scenario, states: list[BoatState]) -> dict:
     for m in scenario.course.marks:
         xs.append(m.pos[0])
         ys.append(m.pos[1])
+    if scenario.course.start_line is not None:
+        for end in (scenario.course.start_line.committee, scenario.course.start_line.pin):
+            xs.append(end[0])
+            ys.append(end[1])
     pad = 80.0
     bounds = {
         "minx": min(xs) - pad,
@@ -72,6 +76,8 @@ def replay_data(scenario: Scenario, states: list[BoatState]) -> dict:
             {
                 "name": b.cfg.name,
                 "color": b.cfg.color,
+                "length": b.cfg.length,
+                "beam": b.cfg.beam,
                 "finish_time": b.finish_time,
                 "n_tacks": b.n_tacks,
                 "n_gybes": b.n_gybes,
@@ -92,11 +98,13 @@ def replay_data(scenario: Scenario, states: list[BoatState]) -> dict:
                         "tws": s.tws,
                         "spd": s.boat_speed,
                         "lad": s.ladder,
+                        "mult": s.wind_mult,
                     }
                     for s in b.history
                 ],
             }
         )
+    rc = scenario.run
     return {
         "name": scenario.name,
         "description": scenario.description,
@@ -106,6 +114,14 @@ def replay_data(scenario: Scenario, states: list[BoatState]) -> dict:
         "boats": boats,
         "results": [vars(summarize(b)) for b in states],
         "ladder_gain": ladder_gain_series(states),
+        # bad-air model params, so the viewer draws shadow cones with the same
+        # geometry the engine used (the model stays authoritative in Python).
+        "badair": {
+            "enabled": rc.badair_enabled,
+            "length": rc.badair_length,
+            "half_angle": rc.badair_half_angle,
+            "max_loss": rc.badair_max_loss,
+        },
     }
 
 

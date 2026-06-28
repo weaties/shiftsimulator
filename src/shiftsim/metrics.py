@@ -26,6 +26,7 @@ class BoatResult:
     avg_upwind_vmg: float  # m/s, upwind legs only
     final_ladder: float
     color: str
+    pct_time_in_badair: float = 0.0  # fraction of upwind samples sailed gassed
 
 
 def _distance(h: list[Sample]) -> float:
@@ -38,8 +39,11 @@ def _distance(h: list[Sample]) -> float:
 def summarize(boat: BoatState) -> BoatResult:
     h = boat.history
     # upwind legs identified by sailing angle (beating uses TWA < 90)
-    up = [s.vmg for s in h if s.twa < 90 and s.boat_speed > 0]
+    up_samples = [s for s in h if s.twa < 90 and s.boat_speed > 0]
+    up = [s.vmg for s in up_samples]
     avg_up = sum(up) / len(up) if up else 0.0
+    gassed = sum(1 for s in up_samples if s.wind_mult < 0.98)
+    pct_badair = round(gassed / len(up_samples), 3) if up_samples else 0.0
     return BoatResult(
         name=boat.cfg.name,
         finished=boat.finished,
@@ -50,6 +54,7 @@ def summarize(boat: BoatState) -> BoatResult:
         avg_upwind_vmg=round(avg_up, 3),
         final_ladder=round(h[-1].ladder, 1) if h else 0.0,
         color=boat.cfg.color,
+        pct_time_in_badair=pct_badair,
     )
 
 
