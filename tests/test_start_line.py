@@ -190,6 +190,33 @@ def test_boat_absolute_start_pos() -> None:
     assert all(s.finished for s in sc.run_sim())
 
 
+def test_dragged_boats_keep_distinct_positions() -> None:
+    # regression for #17: several boats each given a distinct dragged start.pos
+    # must each start where they were placed, not collapse to one point.
+    cfg = {
+        "name": "drag",
+        "ref_twd": 0,
+        "wind": {"type": "oscillating", "mean_twd": 0, "amplitude": 12, "period": 200, "tws": 10},
+        "course": {
+            "type": "windward_leeward",
+            "beat_length": 1200,
+            "line_length": 101,
+            "start_line": {"committee": [50.8, -5.7], "pin": [-49.4, 8.1]},
+        },
+        "run": {"max_time": 3000},
+        "boats": [
+            {"name": "A", "start": {"pos": [-23.1, -13.1]}, "strategy": {"name": "minimize_tacks"}},
+            {"name": "B", "start": {"pos": [5.6, -0.9]}, "strategy": {"name": "minimize_tacks"}},
+            {"name": "C", "start": {"pos": [29.8, -1.2]}, "strategy": {"name": "minimize_tacks"}},
+        ],
+    }
+    sc = Scenario.from_dict(cfg)
+    assert sc.starts == [(-23.1, -13.1), (5.6, -0.9), (29.8, -1.2)]
+    states = sc.run_sim()
+    firsts = [s.history[0].pos for s in states]
+    assert len(set(firsts)) == 3, f"boats collapsed to {firsts}"
+
+
 def test_situation_round_trips_with_length_and_beam() -> None:
     cfg = _situation("starboard")
     cfg["boats"][0]["length"] = 6.5
